@@ -105,7 +105,7 @@ HEALTH_URL="http://localhost:8080/api/v1/health"
 MAX_WAIT=60
 
 for i in $(seq 1 "$MAX_WAIT"); do
-    if curl -s "$HEALTH_URL" 2>/dev/null | grep -q 'success'; then
+    if curl -s --noproxy localhost "$HEALTH_URL" 2>/dev/null | grep -q 'success'; then
         echo ""
         echo -e "${GREEN}      后端就绪 ✓${NC}"
         break
