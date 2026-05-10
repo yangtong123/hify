@@ -47,39 +47,32 @@ echo ""
 # ── 1. MySQL ──────────────────────────────────────────
 echo -e "${YELLOW}[1/5]${NC} 检查 MySQL..."
 
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'hify-mysql'; then
-    if docker exec hify-mysql mysqladmin ping -uroot -p"$MYSQL_PASSWORD" --silent 2>/dev/null; then
-        echo -e "${GREEN}       MySQL 可用 (docker)${NC}"
-    else
-        error "MySQL 容器运行中但连接失败，请检查密码"
-    fi
-elif command -v mysqladmin &>/dev/null; then
+if command -v mysqladmin &>/dev/null; then
     if mysqladmin ping -h127.0.0.1 -uroot -p"$MYSQL_PASSWORD" --silent 2>/dev/null; then
         echo -e "${GREEN}       MySQL 可用 (localhost)${NC}"
     else
-        error "MySQL 连接失败，请检查服务是否启动"
+        echo -e "${YELLOW}       MySQL 连接失败，尝试无密码连接...${NC}"
+        if mysqladmin ping -h127.0.0.1 -uroot --silent 2>/dev/null; then
+            echo -e "${GREEN}       MySQL 可用 (localhost, 无密码)${NC}"
+        else
+            error "MySQL 连接失败，请确保 MySQL 服务已启动 (brew services start mysql 或 systemctl start mysqld)"
+        fi
     fi
 else
-    error "MySQL 未检测到，请执行 docker-compose up -d mysql 或确保 MySQL 已启动"
+    error "未找到 mysqladmin 命令，请安装 MySQL 客户端 (brew install mysql-client 或 apt install mysql-client)"
 fi
 
 # ── 2. Redis ──────────────────────────────────────────
 echo -e "${YELLOW}[2/5]${NC} 检查 Redis..."
 
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'hify-redis'; then
-    if docker exec hify-redis redis-cli ping 2>/dev/null | grep -q PONG; then
-        echo -e "${GREEN}       Redis 可用 (docker)${NC}"
-    else
-        error "Redis 容器运行中但连接失败"
-    fi
-elif command -v redis-cli &>/dev/null; then
+if command -v redis-cli &>/dev/null; then
     if redis-cli ping 2>/dev/null | grep -q PONG; then
         echo -e "${GREEN}       Redis 可用 (localhost)${NC}"
     else
-        error "Redis 连接失败，请检查服务是否启动"
+        error "Redis 连接失败，请确保 Redis 服务已启动 (brew services start redis 或 systemctl start redis)"
     fi
 else
-    error "Redis 未检测到，请执行 docker-compose up -d redis 或确保 Redis 已启动"
+    error "未找到 redis-cli 命令，请安装 Redis (brew install redis 或 apt install redis)"
 fi
 
 # ── 3. 构建后端 ──────────────────────────────────────
