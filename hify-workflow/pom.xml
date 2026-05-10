@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.hify</groupId>
+        <artifactId>hify</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>hify-workflow</artifactId>
+    <packaging>jar</packaging>
+    <description>简版工作流模块：顺序节点执行引擎</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.hify</groupId>
+            <artifactId>hify-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.hify</groupId>
+            <artifactId>hify-model</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.hify</groupId>
+            <artifactId>hify-mcp</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+    </dependencies>
+</project>
