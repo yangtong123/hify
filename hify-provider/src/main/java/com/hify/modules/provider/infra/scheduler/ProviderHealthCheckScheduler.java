@@ -9,6 +9,7 @@ import com.hify.modules.provider.infra.po.ProviderHealthCheckPo;
 import com.hify.modules.provider.infra.po.ProviderPo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.CacheManager;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,7 @@ public class ProviderHealthCheckScheduler {
     private final ProviderMapper providerMapper;
     private final ProviderHealthCheckMapper healthCheckMapper;
     private final ProviderService providerService;
+    private final CacheManager cacheManager;
 
     @Async("asyncExecutor")
     @Scheduled(fixedRate = 60000)
@@ -43,6 +45,11 @@ public class ProviderHealthCheckScheduler {
             checkOne(provider);
         }
         log.info("Health check completed for {} providers", providers.size());
+
+        var cache = cacheManager.getCache("provider-cache");
+        if (cache != null) {
+            cache.clear();
+        }
     }
 
     private void checkOne(ProviderPo provider) {

@@ -2,11 +2,8 @@ package com.hify.modules.provider.domain;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
-import com.hify.common.http.LlmHttpClient;
 import com.hify.common.web.PageResult;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
@@ -16,6 +13,7 @@ import com.hify.modules.provider.api.dto.ProviderDetailResponse.ModelConfigRespo
 import com.hify.modules.provider.api.dto.ProviderQuery;
 import com.hify.modules.provider.api.dto.ProviderRequest;
 import com.hify.modules.provider.api.dto.ProviderResponse;
+import com.hify.modules.provider.infra.adapter.ProviderAdapterFactory;
 import com.hify.modules.provider.infra.mapper.ModelConfigMapper;
 import com.hify.modules.provider.infra.mapper.ProviderHealthCheckMapper;
 import com.hify.modules.provider.infra.mapper.ProviderMapper;
@@ -42,8 +40,7 @@ public class ProviderServiceImpl implements ProviderService {
     private final ProviderMapper providerMapper;
     private final ModelConfigMapper modelConfigMapper;
     private final ProviderHealthCheckMapper healthCheckMapper;
-    private final LlmHttpClient llmHttpClient;
-    private final ObjectMapper objectMapper;
+    private final ProviderAdapterFactory adapterFactory;
 
     @Override
     @Transactional
@@ -188,79 +185,7 @@ public class ProviderServiceImpl implements ProviderService {
             throw new BizException(ErrorCode.NOT_FOUND, "提供商不存在");
         }
 
-        String baseUrl = stripTrailingSlash(provider.getBaseUrl());
-        String providerType = provider.getType();
-        AuthConfig authConfig = provider.getAuthConfig();
-
-        String url = buildTestUrl(baseUrl, providerType);
-        Map<String, String> headers = buildTestHeaders(providerType, authConfig);
-
-        long start = System.currentTimeMillis();
-        try {
-            String responseBody = llmHttpClient.get(url, headers, 10);
-            long latencyMs = System.currentTimeMillis() - start;
-            int modelCount = parseModelCount(responseBody, providerType);
-            log.info("Connection test OK: provider={}, latency={}ms, models={}", provider.getName(), latencyMs, modelCount);
-            return ConnectionTestResult.success(latencyMs, modelCount);
-        } catch (Exception e) {
-            long latencyMs = System.currentTimeMillis() - start;
-            log.warn("Connection test failed: provider={}, latency={}ms, error={}", provider.getName(), latencyMs, e.getMessage());
-            return ConnectionTestResult.fail(e.getMessage());
-        }
-    }
-
-    private String buildTestUrl(String baseUrl, String providerType) {
-        return switch (providerType.toLowerCase()) {
-            case "openai", "openai_compatible" -> baseUrl + "/v1/models";
-            case "anthropic" -> baseUrl + "/v1/models";
-            case "ollama" -> baseUrl + "/api/tags";
-            default -> throw new BizException(ErrorCode.PARAM_ERROR, "不支持的提供商类型: " + providerType);
-        };
-    }
-
-    private Map<String, String> buildTestHeaders(String providerType, AuthConfig authConfig) {
-        Map<String, String> headers = new HashMap<>();
-        String apiKey = authConfig != null ? authConfig.getApiKey() : null;
-        String normalizedType = providerType.toLowerCase();
-        switch (normalizedType) {
-            case "openai", "openai_compatible" -> {
-                if (apiKey != null && !apiKey.isBlank()) {
-                    headers.put("Authorization", "Bearer " + apiKey);
-                }
-            }
-            case "anthropic" -> {
-                if (apiKey != null && !apiKey.isBlank()) {
-                    headers.put("x-api-key", apiKey);
-                }
-                headers.put("anthropic-version", "2023-06-01");
-            }
-            case "ollama" -> {
-                // no auth
-            }
-        }
-        return headers;
-    }
-
-    private int parseModelCount(String responseBody, String providerType) {
-        try {
-            JsonNode root = objectMapper.readTree(responseBody);
-            if ("ollama".equalsIgnoreCase(providerType)) {
-                JsonNode models = root.get("models");
-                return models != null ? models.size() : 0;
-            }
-            JsonNode data = root.get("data");
-            return data != null ? data.size() : 0;
-        } catch (Exception e) {
-            log.warn("Failed to parse model count from response", e);
-            return 0;
-        }
-    }
-
-    private String stripTrailingSlash(String url) {
-        if (url != null && url.endsWith("/")) {
-            return url.substring(0, url.length() - 1);
-        }
-        return url;
+        return adapterFactory.getAdapter(provider.getType()).testConnection(provider);
     }
 
     private void checkNameDuplicate(String name, Long excludeId) {

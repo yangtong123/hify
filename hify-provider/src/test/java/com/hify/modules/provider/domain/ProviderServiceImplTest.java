@@ -2,16 +2,16 @@ package com.hify.modules.provider.domain;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
-import com.hify.common.http.LlmHttpClient;
 import com.hify.common.web.PageResult;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse;
 import com.hify.modules.provider.api.dto.ProviderQuery;
 import com.hify.modules.provider.api.dto.ProviderRequest;
 import com.hify.modules.provider.api.dto.ProviderResponse;
+import com.hify.modules.provider.infra.adapter.ProviderAdapter;
+import com.hify.modules.provider.infra.adapter.ProviderAdapterFactory;
 import com.hify.modules.provider.infra.mapper.ModelConfigMapper;
 import com.hify.modules.provider.infra.mapper.ProviderHealthCheckMapper;
 import com.hify.modules.provider.infra.mapper.ProviderMapper;
@@ -28,12 +28,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -52,7 +50,10 @@ class ProviderServiceImplTest {
     private ProviderHealthCheckMapper healthCheckMapper;
 
     @Mock
-    private LlmHttpClient llmHttpClient;
+    private ProviderAdapterFactory adapterFactory;
+
+    @Mock
+    private ProviderAdapter providerAdapter;
 
     private ProviderServiceImpl providerService;
 
@@ -62,8 +63,7 @@ class ProviderServiceImplTest {
                 providerMapper,
                 modelConfigMapper,
                 healthCheckMapper,
-                llmHttpClient,
-                new ObjectMapper());
+                adapterFactory);
     }
 
     @Test
@@ -169,54 +169,31 @@ class ProviderServiceImplTest {
     }
 
     @Test
-    void testConnectionShouldCallOpenAiModelsEndpointWithBearerToken() {
+    void testConnectionShouldDelegateToAdapter() {
         ProviderPo provider = providerPo(1L, "OpenAI", "openai", "sk-live-key");
         provider.setBaseUrl("https://api.openai.com/");
         when(providerMapper.selectById(1L)).thenReturn(provider);
-        when(llmHttpClient.get(eq("https://api.openai.com/v1/models"), any(), eq(10L)))
-                .thenReturn("""
-                        {"data":[{"id":"gpt-4o"},{"id":"gpt-4.1"}]}
-                        """);
+        when(adapterFactory.getAdapter("openai")).thenReturn(providerAdapter);
+        when(providerAdapter.testConnection(provider))
+                .thenReturn(ConnectionTestResult.success(150L, 2));
 
         ConnectionTestResult result = providerService.testConnection(1L);
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getModelCount()).isEqualTo(2);
-
-        ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(llmHttpClient).get(eq("https://api.openai.com/v1/models"), headersCaptor.capture(), eq(10L));
-        assertThat(headersCaptor.getValue()).containsEntry("Authorization", "Bearer sk-live-key");
+        assertThat(result.getLatencyMs()).isEqualTo(150L);
+        verify(adapterFactory).getAdapter("openai");
+        verify(providerAdapter).testConnection(provider);
     }
 
     @Test
-    void testConnectionShouldUseAnthropicHeaders() {
-        ProviderPo provider = providerPo(1L, "Claude", "anthropic", "claude-key");
-        provider.setBaseUrl("https://api.anthropic.com");
-        when(providerMapper.selectById(1L)).thenReturn(provider);
-        when(llmHttpClient.get(eq("https://api.anthropic.com/v1/models"), any(), eq(10L)))
-                .thenReturn("""
-                        {"data":[{"id":"claude-sonnet"}]}
-                        """);
-
-        ConnectionTestResult result = providerService.testConnection(1L);
-
-        assertThat(result.isSuccess()).isTrue();
-        assertThat(result.getModelCount()).isEqualTo(1);
-
-        ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(llmHttpClient).get(eq("https://api.anthropic.com/v1/models"), headersCaptor.capture(), eq(10L));
-        assertThat(headersCaptor.getValue())
-                .containsEntry("x-api-key", "claude-key")
-                .containsEntry("anthropic-version", "2023-06-01");
-    }
-
-    @Test
-    void testConnectionShouldReturnFailureWhenHttpClientThrows() {
+    void testConnectionShouldDelegateFailureFromAdapter() {
         ProviderPo provider = providerPo(1L, "Ollama", "ollama", null);
         provider.setBaseUrl("http://localhost:11434");
         when(providerMapper.selectById(1L)).thenReturn(provider);
-        when(llmHttpClient.get(eq("http://localhost:11434/api/tags"), any(), eq(10L)))
-                .thenThrow(new IllegalStateException("connection refused"));
+        when(adapterFactory.getAdapter("ollama")).thenReturn(providerAdapter);
+        when(providerAdapter.testConnection(provider))
+                .thenReturn(ConnectionTestResult.fail("connection refused"));
 
         ConnectionTestResult result = providerService.testConnection(1L);
 
@@ -232,7 +209,7 @@ class ProviderServiceImplTest {
                 .isInstanceOf(BizException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.NOT_FOUND);
-        verifyNoInteractions(llmHttpClient);
+        verifyNoInteractions(adapterFactory);
     }
 
     private ProviderRequest providerRequest(String name, String type, String apiKey) {

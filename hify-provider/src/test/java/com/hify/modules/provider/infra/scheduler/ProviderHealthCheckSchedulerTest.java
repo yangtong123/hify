@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,11 +38,17 @@ class ProviderHealthCheckSchedulerTest {
     @Mock
     private ProviderService providerService;
 
+    @Mock
+    private CacheManager cacheManager;
+
+    @Mock
+    private Cache cache;
+
     private ProviderHealthCheckScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        scheduler = new ProviderHealthCheckScheduler(providerMapper, healthCheckMapper, providerService);
+        scheduler = new ProviderHealthCheckScheduler(providerMapper, healthCheckMapper, providerService, cacheManager);
     }
 
     @Test
@@ -49,7 +57,7 @@ class ProviderHealthCheckSchedulerTest {
 
         scheduler.checkAllProviders();
 
-        verifyNoInteractions(providerService, healthCheckMapper);
+        verifyNoInteractions(providerService, healthCheckMapper, cacheManager);
     }
 
     @Test
@@ -58,6 +66,7 @@ class ProviderHealthCheckSchedulerTest {
         when(providerMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(provider));
         when(providerService.testConnection(1L)).thenReturn(ConnectionTestResult.success(25, 2));
         when(healthCheckMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(cacheManager.getCache("provider-cache")).thenReturn(cache);
 
         scheduler.checkAllProviders();
 
@@ -81,6 +90,7 @@ class ProviderHealthCheckSchedulerTest {
         when(providerMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(provider));
         when(providerService.testConnection(1L)).thenReturn(ConnectionTestResult.success(42, 3));
         when(healthCheckMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existing);
+        when(cacheManager.getCache("provider-cache")).thenReturn(cache);
 
         scheduler.checkAllProviders();
 
@@ -102,6 +112,7 @@ class ProviderHealthCheckSchedulerTest {
         when(providerMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(provider));
         when(providerService.testConnection(1L)).thenReturn(ConnectionTestResult.fail("timeout"));
         when(healthCheckMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existing);
+        when(cacheManager.getCache("provider-cache")).thenReturn(cache);
 
         scheduler.checkAllProviders();
 
@@ -121,6 +132,7 @@ class ProviderHealthCheckSchedulerTest {
         when(providerMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(provider));
         when(providerService.testConnection(1L)).thenThrow(new IllegalStateException("connection refused"));
         when(healthCheckMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existing);
+        when(cacheManager.getCache("provider-cache")).thenReturn(cache);
 
         scheduler.checkAllProviders();
 
