@@ -7,46 +7,48 @@
 -- ----------------------------
 -- 1. LLM 提供商
 -- ----------------------------
+-- 模型提供商
 CREATE TABLE t_provider (
-    id              BIGINT          NOT NULL AUTO_INCREMENT,
-    name            VARCHAR(100)    NOT NULL COMMENT '提供商名称',
-    provider_type   VARCHAR(50)     NOT NULL COMMENT '提供商类型: openai/claude/gemini/ollama',
-    api_base_url    VARCHAR(500)    NOT NULL COMMENT 'API 根地址',
-    api_key         VARCHAR(500)    NOT NULL COMMENT 'API 密钥（加密存储）',
-    is_enabled      TINYINT(1)      NOT NULL DEFAULT 1 COMMENT '是否启用',
-    config_json     JSON            COMMENT '扩展配置: 自定义 header、超时覆盖等',
-    created_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    updated_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-    deleted         TINYINT(1)      NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    UNIQUE INDEX idx_name_deleted (name, deleted),
-    INDEX idx_type_enabled (provider_type, is_enabled, deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='LLM 提供商';
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL COMMENT '供应商名称，唯一',
+    type VARCHAR(30) NOT NULL COMMENT 'OPENAI/ANTHROPIC/OLLAMA/OPENAI_COMPATIBLE',
+    base_url VARCHAR(500) NOT NULL COMMENT 'API 基础地址',
+    auth_config JSON COMMENT '鉴权配置，结构按 type 不同',
+    enabled TINYINT DEFAULT 1 COMMENT '0=禁用 1=启用',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    deleted TINYINT DEFAULT 0
+) COMMENT '模型提供商';
 
--- ----------------------------
--- 2. 模型配置（关联提供商）
--- ----------------------------
+-- 模型配置
 CREATE TABLE t_model_config (
-    id                  BIGINT          NOT NULL AUTO_INCREMENT,
-    provider_id         BIGINT          NOT NULL COMMENT '所属提供商',
-    model_name          VARCHAR(100)    NOT NULL COMMENT '模型标识: gpt-4o / claude-sonnet-4-6 / gemini-2.5-pro',
-    display_name        VARCHAR(200)    COMMENT '前端展示名称',
-    context_window      INT             COMMENT '上下文窗口大小（token 上限）',
-    max_tokens          INT             COMMENT '最大输出 token',
-    supports_streaming  TINYINT(1)      NOT NULL DEFAULT 1 COMMENT '是否支持流式 SSE',
-    supports_vision     TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '是否支持图片输入',
-    is_enabled          TINYINT(1)      NOT NULL DEFAULT 1 COMMENT '是否启用',
-    config_json         JSON            COMMENT '扩展参数: temperature 默认值、top_p 默认值等',
-    created_at          DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    updated_at          DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-    deleted             TINYINT(1)      NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    INDEX idx_provider_deleted (provider_id, deleted),
-    UNIQUE INDEX idx_provider_model (provider_id, model_name, deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型配置';
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    provider_id BIGINT NOT NULL COMMENT '所属供应商 ID',
+    name VARCHAR(100) NOT NULL COMMENT '展示名，如 GPT-4o',
+    model_id VARCHAR(100) NOT NULL COMMENT '调用时传给 API 的值',
+    context_size INT COMMENT '上下文窗口大小（token 数）',
+    extra_params JSON COMMENT '模型级别扩展参数',
+    enabled TINYINT DEFAULT 1 COMMENT '0=禁用 1=启用',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    deleted TINYINT DEFAULT 0
+) COMMENT '模型配置';
 
+-- 供应商健康状态（独立表，高频写不影响 provider 缓存）
+CREATE TABLE t_provider_health (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    provider_id BIGINT NOT NULL COMMENT '供应商 ID，唯一索引',
+    status VARCHAR(20) DEFAULT 'UNKNOWN' COMMENT 'UP/DOWN/DEGRADED/UNKNOWN',
+    last_check_at DATETIME COMMENT '最后探测时间',
+    last_success_at DATETIME COMMENT '最后成功时间',
+    fail_count INT DEFAULT 0 COMMENT '连续失败次数',
+    latency_ms INT COMMENT '最近一次延迟 ms',
+    error_message VARCHAR(500) COMMENT '最近失败原因',
+    updated_at DATETIME NOT NULL,
+    UNIQUE INDEX idx_provider_health_provider_id (provider_id)
+) COMMENT '供应商健康状态';
 -- ----------------------------
--- 3. Agent 配置
+-- 4. Agent 配置
 -- ----------------------------
 CREATE TABLE t_agent (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
@@ -68,7 +70,7 @@ CREATE TABLE t_agent (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent 配置';
 
 -- ----------------------------
--- 4. Agent 与 MCP 工具关联
+-- 5. Agent 与 MCP 工具关联
 -- ----------------------------
 CREATE TABLE t_agent_tool (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
@@ -84,7 +86,7 @@ CREATE TABLE t_agent_tool (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent 关联 MCP 工具';
 
 -- ----------------------------
--- 5. MCP 服务配置
+-- 6. MCP 服务配置
 -- ----------------------------
 CREATE TABLE t_mcp_server (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
@@ -106,7 +108,7 @@ CREATE TABLE t_mcp_server (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='MCP 服务';
 
 -- ----------------------------
--- 6. 对话会话
+-- 7. 对话会话
 -- ----------------------------
 CREATE TABLE t_chat_session (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
@@ -123,7 +125,7 @@ CREATE TABLE t_chat_session (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对话会话';
 
 -- ----------------------------
--- 7. 对话消息（游标分页）
+-- 8. 对话消息（游标分页）
 -- ----------------------------
 CREATE TABLE t_chat_message (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
@@ -141,7 +143,7 @@ CREATE TABLE t_chat_message (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对话消息';
 
 -- ----------------------------
--- 8. Demo 演示
+-- 9. Demo 演示
 -- ----------------------------
 CREATE TABLE t_demo_item (
     id              BIGINT          NOT NULL AUTO_INCREMENT,

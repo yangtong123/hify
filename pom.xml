@@ -20,11 +20,11 @@
 
     <modules>
         <module>hify-common</module>
-        <module>hify-model</module>
+        <module>hify-provider</module>
         <module>hify-mcp</module>
         <module>hify-knowledge</module>
         <module>hify-agent</module>
-        <module>hify-conversation</module>
+        <module>hify-chat</module>
         <module>hify-workflow</module>
         <module>hify-app</module>
     </modules>
@@ -49,7 +49,7 @@
             </dependency>
             <dependency>
                 <groupId>com.hify</groupId>
-                <artifactId>hify-model</artifactId>
+                <artifactId>hify-provider</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -69,7 +69,7 @@
             </dependency>
             <dependency>
                 <groupId>com.hify</groupId>
-                <artifactId>hify-conversation</artifactId>
+                <artifactId>hify-chat</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

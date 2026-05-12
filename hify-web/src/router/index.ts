@@ -5,12 +5,12 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/models',
+      redirect: '/providers',
     },
     {
-      path: '/models',
-      name: 'models',
-      component: () => import('@/views/model/ProviderList.vue'),
+      path: '/providers',
+      name: 'providers',
+      component: () => import('@/views/provider/ProviderList.vue'),
     },
     {
       path: '/agents',
@@ -18,9 +18,9 @@ const router = createRouter({
       component: () => import('@/views/agent/AgentList.vue'),
     },
     {
-      path: '/conversations',
-      name: 'conversations',
-      component: () => import('@/views/conversation/ConversationList.vue'),
+      path: '/chat',
+      name: 'chat',
+      component: () => import('@/views/chat/ChatList.vue'),
     },
   ],
 })

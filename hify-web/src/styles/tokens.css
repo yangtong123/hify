@@ -1,0 +1,287 @@
+/* ============================================================
+   Hify Design System — Design Tokens
+   视觉参考：Linear + Supabase
+   浅底 + 科技感点缀 | 深色侧边栏 | 蓝紫主色 + 青绿辅色
+   ============================================================ */
+
+:root {
+  /* ============================================================
+     1. 主色 — 蓝紫系 (Indigo-Violet)
+     品牌色、主按钮、链接、选中态
+     ============================================================ */
+  --hify-color-primary-50: #EEF2FF;
+  --hify-color-primary-100: #E0E7FF;
+  --hify-color-primary-200: #C7D2FE;
+  --hify-color-primary-300: #A5B4FC;
+  --hify-color-primary-400: #818CF8;
+  --hify-color-primary-500: #6366F1;   /* 主品牌色 */
+  --hify-color-primary-600: #5558E6;   /* hover */
+  --hify-color-primary-700: #4F46E5;   /* active / pressed */
+  --hify-color-primary-800: #4338CA;
+  --hify-color-primary-900: #3730A3;
+
+  /* 快捷别名 */
+  --color-primary: var(--hify-color-primary-500);
+  --color-primary-hover: var(--hify-color-primary-600);
+  --color-primary-active: var(--hify-color-primary-700);
+  --color-primary-light: var(--hify-color-primary-50);
+  --color-primary-soft: var(--hify-color-primary-100);
+
+  /* ============================================================
+     2. 辅色 — 青绿系 (Cyan-Mint)
+     数据高亮、状态指示、标签、图表点缀
+     ============================================================ */
+  --hify-color-accent-50: #ECFEFF;
+  --hify-color-accent-100: #CFFAFE;
+  --hify-color-accent-200: #A5F3FC;
+  --hify-color-accent-300: #67E8F9;
+  --hify-color-accent-400: #22D3EE;
+  --hify-color-accent-500: #06B6D4;    /* 主辅色 */
+  --hify-color-accent-600: #0891B2;
+  --hify-color-accent-700: #0E7490;
+  --hify-color-accent-800: #155E75;
+  --hify-color-accent-900: #164E63;
+
+  --color-accent: var(--hify-color-accent-500);
+  --color-accent-light: var(--hify-color-accent-50);
+  --color-accent-soft: var(--hify-color-accent-100);
+
+  /* ============================================================
+     3. 中性色阶 — 冷灰系 (Cool Gray)
+     背景、边框、分割线、文字
+     ============================================================ */
+  --hify-gray-50: #FAFAFB;
+  --hify-gray-75: #F5F5F7;
+  --hify-gray-100: #F0F0F3;
+  --hify-gray-150: #E8E8ED;
+  --hify-gray-200: #E0E0E6;
+  --hify-gray-300: #D1D1D9;
+  --hify-gray-400: #B0B0BD;
+  --hify-gray-500: #8E8EA1;
+  --hify-gray-600: #6B6B80;
+  --hify-gray-700: #4A4A5E;
+  --hify-gray-800: #2D2D3F;
+  --hify-gray-900: #1E1E2E;
+
+  /* ============================================================
+     4. 语义色
+     成功 / 警告 / 危险 / 信息
+     ============================================================ */
+  --hify-color-success-50: #ECFDF5;
+  --hify-color-success-100: #D1FAE5;
+  --hify-color-success-500: #10B981;
+  --hify-color-success-600: #059669;
+
+  --hify-color-warning-50: #FFFBEB;
+  --hify-color-warning-100: #FEF3C7;
+  --hify-color-warning-500: #F59E0B;
+  --hify-color-warning-600: #D97706;
+
+  --hify-color-danger-50: #FEF2F2;
+  --hify-color-danger-100: #FEE2E2;
+  --hify-color-danger-500: #EF4444;
+  --hify-color-danger-600: #DC2626;
+
+  --hify-color-info-50: #EFF6FF;
+  --hify-color-info-100: #DBEAFE;
+  --hify-color-info-500: #3B82F6;
+  --hify-color-info-600: #2563EB;
+
+  --color-success: var(--hify-color-success-500);
+  --color-warning: var(--hify-color-warning-500);
+  --color-danger: var(--hify-color-danger-500);
+  --color-info: var(--hify-color-info-500);
+
+  /* ============================================================
+     5. 背景色阶
+     ============================================================ */
+  --color-bg-dark: #0D0D1A;               /* 深色底（侧边栏），带蓝底调的非纯黑 */
+  --color-bg-secondary: #F0F2F5;          /* 内容区浅灰底，与白色卡片形成层次 */
+  --bg-page: var(--hify-gray-50);         /* 页面底色 */
+  --bg-surface: #FFFFFF;                  /* 卡片、表格、弹窗 */
+  --bg-surface-elevated: #FFFFFF;         /* 浮层（配合阴影） */
+  --bg-surface-hover: var(--hify-gray-75);
+  --bg-surface-active: var(--hify-gray-100);
+  --bg-mask: rgba(0, 0, 0, 0.45);        /* 模态框遮罩 */
+  --bg-mask-light: rgba(0, 0, 0, 0.15);  /* 轻遮罩（抽屉等） */
+
+  /* ============================================================
+     6. 侧边栏（深色底）
+     ============================================================ */
+  --sidebar-bg: var(--color-bg-dark);
+  --sidebar-bg-hover: rgba(255, 255, 255, 0.08);
+  --sidebar-bg-active: rgba(99, 102, 241, 0.15);
+  --sidebar-text: rgba(255, 255, 255, 0.65);
+  --sidebar-text-hover: rgba(255, 255, 255, 0.95);
+  --sidebar-text-active: #FFFFFF;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-logo-text: #FFFFFF;
+  --sidebar-width: 230px;
+  --sidebar-collapsed-width: 64px;
+  --sidebar-accent-line: var(--hify-color-primary-500);  /* 选中态左边竖线 */
+
+  /* ============================================================
+     7. 文字色阶
+     ============================================================ */
+  --text-primary: var(--hify-gray-900);    /* 标题、正文 */
+  --text-secondary: var(--hify-gray-600);  /* 描述、标签、辅助 */
+  --text-tertiary: var(--hify-gray-400);   /* 占位符、禁用态 */
+  --text-inverse: #FFFFFF;                 /* 深色背景上的文字 */
+  --text-link: var(--hify-color-primary-500);
+  --text-link-hover: var(--hify-color-primary-600);
+
+  /* ============================================================
+     8. 边框色阶
+     ============================================================ */
+  --border-default: var(--hify-gray-200);
+  --border-light: var(--hify-gray-150);
+  --border-strong: var(--hify-gray-300);
+  --border-focus: var(--hify-color-primary-400);
+
+  /* ============================================================
+     9. 圆角
+     ============================================================ */
+  --radius-none: 0;
+  --radius-xs: 2px;
+  --radius-sm: 4px;     /* Tag、Badge、小输入框 */
+  --radius-md: 6px;     /* Button、Input、Select（默认） */
+  --radius-lg: 8px;     /* Card、Modal、Dialog */
+  --radius-xl: 12px;    /* 大卡片、Panel */
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  /* ============================================================
+     10. 阴影（极其克制，Linear 风格）
+     ============================================================ */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.04),
+               0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.06),
+               0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 24px -4px rgba(0, 0, 0, 0.08),
+               0 4px 8px -4px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 16px 48px -8px rgba(0, 0, 0, 0.1),
+               0 8px 16px -8px rgba(0, 0, 0, 0.04);
+  --shadow-ring: 0 0 0 3px rgba(99, 102, 241, 0.25);  /* focus ring */
+
+  /* ============================================================
+     11. 过渡动效
+     ============================================================ */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-ease-spring: 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ============================================================
+     12. 字体
+     ============================================================ */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+               Roboto, 'Helvetica Neue', Arial,
+               'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB',
+               sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code',
+               'Menlo', 'Monaco', 'Consolas', monospace;
+
+  /* ============================================================
+     13. 字号 & 行高
+     ============================================================ */
+  --text-xs: 0.75rem;     /* 12px */
+  --text-sm: 0.8125rem;   /* 13px */
+  --text-base: 0.875rem;  /* 14px — 正文基准 */
+  --text-md: 1rem;        /* 16px */
+  --text-lg: 1.125rem;    /* 18px */
+  --text-xl: 1.25rem;     /* 20px */
+  --text-2xl: 1.5rem;     /* 24px */
+  --text-3xl: 1.875rem;   /* 30px */
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.75;
+
+  /* 常用组合 */
+  --text-body-sm: var(--text-xs) / var(--leading-normal) var(--font-sans);
+  --text-body: var(--text-base) / var(--leading-normal) var(--font-sans);
+  --text-body-lg: var(--text-md) / var(--leading-relaxed) var(--font-sans);
+
+  /* ============================================================
+     14. 间距
+     ============================================================ */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* 页面级间距 */
+  --page-padding: 24px;       /* 页面内边距 */
+  --card-padding: 20px;       /* 卡片内边距 */
+  --section-gap: 16px;        /* 元素/区块间距 */
+
+  /* ============================================================
+     15. 组件级 Token
+     ============================================================ */
+  /* 表格 */
+  --table-header-bg: var(--hify-gray-75);
+  --table-row-hover: var(--hify-gray-50);
+  --table-border: var(--border-light);
+  --table-stripe: var(--hify-gray-50);
+
+  /* 输入框 */
+  --input-bg: #FFFFFF;
+  --input-border: var(--border-default);
+  --input-border-focus: var(--color-primary);
+  --input-placeholder: var(--text-tertiary);
+  --input-height: 34px;
+  --input-height-lg: 40px;
+  --input-radius: var(--radius-md);
+
+  /* 按钮 */
+  --btn-height-sm: 28px;
+  --btn-height-md: 34px;
+  --btn-height-lg: 40px;
+  --btn-radius: var(--radius-md);
+  --btn-font-weight: 500;
+  --btn-transition: var(--transition-fast);
+
+  /* 标签 / Badge */
+  --tag-radius: var(--radius-sm);
+
+  /* 分割线 */
+  --divider-color: var(--border-light);
+
+  /* 滚动条 */
+  --scrollbar-thumb: var(--hify-gray-300);
+  --scrollbar-track: transparent;
+  --scrollbar-width: 6px;
+
+  /* ============================================================
+     16. z-index 层级
+     ============================================================ */
+  --z-base: 0;
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+  --z-toast: 1080;
+}
+
+/* ============================================================
+   深色侧边栏 Token（独立作用域，不影响全局浅色变量）
+   在侧边栏容器上通过 class 或 data 属性激活
+   ============================================================ */
+[data-theme-sidebar="dark"] {
+  --bg-page: var(--sidebar-bg);
+  --bg-surface: var(--sidebar-bg);
+  --text-primary: var(--sidebar-text);
+  --text-secondary: var(--sidebar-text);
+  --border-default: var(--sidebar-border);
+}

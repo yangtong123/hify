@@ -14,9 +14,9 @@ Hify 是一个简化版内部 AI Agent 平台，基于 Dify 思路设计。
 
 | 模块 | 说明 |
 |------|------|
-| 模型管理 (model) | 管理 OpenAI / Claude / Gemini / Ollama 等 LLM 提供商配置，支持连通性测试 |
+| 提供商管理 (provider) | 管理 OpenAI / Claude / Gemini / Ollama 等 LLM 提供商配置，支持连通性测试 |
 | Agent 配置 (agent) | 配置 Agent 名称、系统提示词、绑定模型、关联知识库和 MCP 工具 |
-| 对话引擎 (conversation) | 多轮对话、历史记录、SSE 流式响应 |
+| 对话引擎 (chat) | 多轮对话、历史记录、SSE 流式响应 |
 | 知识库 RAG (knowledge) | 文档上传 → 异步向量化 → pgvector 余弦搜索 → 注入 LLM 上下文 |
 | 简版工作流 (workflow) | 顺序节点执行：开始 → LLM → 条件分支 → 工具调用 → 结束 |
 | MCP 工具接入 (mcp) | 接入外部 MCP 工具，供 Agent 和工作流调用 |
@@ -36,9 +36,9 @@ com.hify
 │   ├── web/             # 通用 Web 响应包装（Result<T>, PageResult<T>）—— 不是 Controller 层，别和模块的 web/ 混淆
 │   └── util/            # 通用工具类（JsonUtil, DateUtil）
 ├── modules/
-│   ├── model/           # LLM 提供商管理
+│   ├── provider/        # LLM 提供商管理
 │   ├── agent/           # Agent 配置
-│   ├── conversation/    # 对话引擎
+│   ├── chat/             # 对话引擎
 │   ├── knowledge/       # 知识库 RAG
 │   ├── workflow/        # 简版工作流
 │   └── mcp/             # MCP 工具接入
@@ -69,18 +69,18 @@ modules/{module}/
 - **DTO 命名约定**：HTTP 请求体用 `XxxRequest`，响应体用 `XxxResponse`，跨模块传输用 `XxxDto`；查询参数简单时直接用基本类型，复杂时用 `XxxQuery`
 
 ```java
-// 正确：agent 模块通过 ModelService（api/ 接口）调用 model 模块
+// 正确：agent 模块通过 ProviderService（api/ 接口）调用 provider 模块
 @Service
 @RequiredArgsConstructor
 public class AgentServiceImpl implements AgentService {
-    private final ModelService modelService; // 来自 model 模块的 api/ 接口
+    private final ProviderService providerService; // 来自 provider 模块的 api/ 接口
 }
 ```
 
 ### api/ 接口命名约定
 
-- 每个模块 `api/` 下对外暴露的接口以 `Service` 结尾（如 `ModelService`、`AgentService`）
-- 对应的实现类放在本模块 `domain/` 下，以 `ServiceImpl` 结尾（如 `ModelServiceImpl`）
+- 每个模块 `api/` 下对外暴露的接口以 `Service` 结尾（如 `ProviderService`、`AgentService`）
+- 对应的实现类放在本模块 `domain/` 下，以 `ServiceImpl` 结尾（如 `ProviderServiceImpl`）
 - 其他模块**只依赖 `api/` 下的接口**，Spring 通过 `@Service` + 构造注入自动装配实现类
 
 ### Config 放置原则
@@ -90,7 +90,7 @@ public class AgentServiceImpl implements AgentService {
 | 条件 | 放置位置 |
 |------|----------|
 | 被多个模块共用（如 JacksonConfig、MybatisPlusConfig） | `common/config/` |
-| 仅本模块使用（如 Model 模块专属的 OkHttpClient Bean、RetryConfig） | `modules/{module}/infra/config/` |
+| 仅本模块使用（如 Provider 模块专属的 OkHttpClient Bean、RetryConfig） | `modules/{module}/infra/config/` |
 | 当前只被一个模块使用，但明显是通用能力（如 LLM 线程池、熔断器） | 先放 `common/config/`，后续按需拆分 |
 
 **核心原则**：放 `common/` 的配置，任何一个模块去掉后都不影响它存在；放模块 `infra/` 的配置，模块删除时它也必须一起删除。

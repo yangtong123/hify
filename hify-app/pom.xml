@@ -22,7 +22,7 @@
         </dependency>
         <dependency>
             <groupId>com.hify</groupId>
-            <artifactId>hify-model</artifactId>
+            <artifactId>hify-provider</artifactId>
         </dependency>
         <dependency>
             <groupId>com.hify</groupId>
@@ -38,7 +38,7 @@
         </dependency>
         <dependency>
             <groupId>com.hify</groupId>
-            <artifactId>hify-conversation</artifactId>
+            <artifactId>hify-chat</artifactId>
         </dependency>
         <dependency>
             <groupId>com.hify</groupId>
