@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T">
 import { ref, onMounted } from 'vue'
-import { ElTable, ElTableColumn, ElPagination, ElEmpty } from 'element-plus'
+import { ElTable, ElTableColumn, ElPagination, ElEmpty, ElAlert } from 'element-plus'
 
 export interface HifyColumn {
   label: string
@@ -33,6 +33,7 @@ const props = withDefaults(
 )
 
 const loading = ref(false)
+const errorMessage = ref('')
 const tableData = ref<T[]>([])
 const total = ref(0)
 const currentPage = ref(1)
@@ -40,10 +41,13 @@ const currentSize = ref(props.pageSize)
 
 async function fetchData() {
   loading.value = true
+  errorMessage.value = ''
   try {
     const result = await props.api({ page: currentPage.value, size: currentSize.value })
     tableData.value = result.records
     total.value = result.total
+  } catch (e: any) {
+    errorMessage.value = e.message || '加载失败'
   } finally {
     loading.value = false
   }
@@ -69,6 +73,15 @@ onMounted(() => {
 
 <template>
   <div class="hify-table" v-loading="loading">
+    <el-alert
+      v-if="errorMessage"
+      :title="errorMessage"
+      type="error"
+      show-icon
+      closable
+      @close="errorMessage = ''"
+      style="margin-bottom: 12px"
+    />
     <el-table :data="tableData" row-key="id" :border="false" stripe>
       <el-table-column
         v-for="col in columns"

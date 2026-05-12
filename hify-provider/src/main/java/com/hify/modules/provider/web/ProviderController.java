@@ -94,7 +94,7 @@ public class ProviderController {
             @ApiResponse(responseCode = "200", description = "查询成功")
     })
     @GetMapping
-    public Result<List<ProviderResponse>> list(
+    public PageResult<List<ProviderResponse>> list(
             @Parameter(description = "查询条件：providerType、isEnabled、page、size")
             ProviderQuery query) {
         return providerService.list(query);

@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T extends Record<string, unknown>">
 import { ref, computed } from 'vue'
-import { ElDialog, ElForm, ElFormItem, ElButton } from 'element-plus'
+import { ElDialog, ElForm, ElButton } from 'element-plus'
 import type { FormRules, FormInstance } from 'element-plus'
 
 const props = withDefaults(
@@ -11,6 +11,7 @@ const props = withDefaults(
     width?: string
     confirmText?: string
     cancelText?: string
+    onSubmit?: (data: T) => Promise<void> | void
   }>(),
   {
     width: '520px',
@@ -47,8 +48,19 @@ async function handleSubmit() {
   } catch {
     return
   }
-  loading.value = true
-  emit('submit', { ...formData.value } as T)
+  if (props.onSubmit) {
+    loading.value = true
+    try {
+      await props.onSubmit({ ...formData.value } as T)
+      visible.value = false
+    } catch {
+      // parent handles error display
+    } finally {
+      loading.value = false
+    }
+  } else {
+    emit('submit', { ...formData.value } as T)
+  }
 }
 
 function handleClose() {

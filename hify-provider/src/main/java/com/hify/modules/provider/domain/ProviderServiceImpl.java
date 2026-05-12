@@ -138,7 +138,47 @@ public class ProviderServiceImpl implements ProviderService {
         List<ProviderResponse> list = result.getRecords().stream()
                 .map(this::toResponse)
                 .toList();
+
+        if (!list.isEmpty()) {
+            List<Long> providerIds = list.stream().map(ProviderResponse::getId).toList();
+            enrichWithHealth(list, providerIds);
+            enrichWithModelCount(list, providerIds);
+        }
+
         return PageResult.ok(list, result.getTotal(), query.getPage(), query.getSize());
+    }
+
+    private void enrichWithHealth(List<ProviderResponse> list, List<Long> providerIds) {
+        List<ProviderHealthCheckPo> healthRecords = healthCheckMapper.selectList(
+                new LambdaQueryWrapper<ProviderHealthCheckPo>()
+                        .in(ProviderHealthCheckPo::getProviderId, providerIds));
+        Map<Long, ProviderHealthCheckPo> healthMap = new HashMap<>();
+        for (ProviderHealthCheckPo h : healthRecords) {
+            healthMap.put(h.getProviderId(), h);
+        }
+        for (ProviderResponse resp : list) {
+            ProviderHealthCheckPo h = healthMap.get(resp.getId());
+            if (h != null) {
+                resp.setHealthStatus(h.getStatus() != null ? h.getStatus().toUpperCase() : "UNKNOWN");
+                resp.setHealthLatencyMs(h.getLatencyMs());
+            } else {
+                resp.setHealthStatus("UNKNOWN");
+            }
+        }
+    }
+
+    private void enrichWithModelCount(List<ProviderResponse> list, List<Long> providerIds) {
+        List<ModelConfigPo> models = modelConfigMapper.selectList(
+                new LambdaQueryWrapper<ModelConfigPo>()
+                        .in(ModelConfigPo::getProviderId, providerIds)
+                        .eq(ModelConfigPo::getEnabled, 1));
+        Map<Long, Long> countMap = new HashMap<>();
+        for (ModelConfigPo m : models) {
+            countMap.merge(m.getProviderId(), 1L, Long::sum);
+        }
+        for (ProviderResponse resp : list) {
+            resp.setModelCount(countMap.getOrDefault(resp.getId(), 0L).intValue());
+        }
     }
 
     @Override
@@ -266,10 +306,33 @@ public class ProviderServiceImpl implements ProviderService {
         resp.setType(po.getType());
         resp.setBaseUrl(po.getBaseUrl());
         resp.setEnabled(po.getEnabled());
-        resp.setAuthConfig(po.getAuthConfig());
-        resp.setApiKey(maskApiKey(po.getAuthConfig()));
+        resp.setAuthConfig(maskAuthConfig(po.getAuthConfig()));
+        resp.setApiKey(extractMaskedApiKey(po.getAuthConfig()));
         resp.setCreatedAt(po.getCreatedAt());
         resp.setUpdatedAt(po.getUpdatedAt());
+    }
+
+    private AuthConfig maskAuthConfig(AuthConfig source) {
+        if (source == null) {
+            return null;
+        }
+        AuthConfig masked = new AuthConfig();
+        masked.setAuthType(source.getAuthType());
+        masked.setApiKey(extractMaskedApiKey(source));
+        masked.setApiVersion(source.getApiVersion());
+        masked.setCustomHeaders(source.getCustomHeaders());
+        return masked;
+    }
+
+    private String extractMaskedApiKey(AuthConfig authConfig) {
+        if (authConfig == null) {
+            return null;
+        }
+        String key = authConfig.getApiKey();
+        if (key == null || key.length() <= 8) {
+            return "****";
+        }
+        return key.substring(0, 4) + "****" + key.substring(key.length() - 4);
     }
 
     private ModelConfigResponse toModelConfigResponse(ModelConfigPo po) {
@@ -281,16 +344,5 @@ public class ProviderServiceImpl implements ProviderService {
         resp.setEnabled(po.getEnabled());
         resp.setExtraParams(po.getExtraParams());
         return resp;
-    }
-
-    private String maskApiKey(AuthConfig authConfig) {
-        if (authConfig == null) {
-            return null;
-        }
-        String apiKey = authConfig.getApiKey();
-        if (apiKey == null || apiKey.length() <= 8) {
-            return "****";
-        }
-        return apiKey.substring(0, 4) + "****" + apiKey.substring(apiKey.length() - 4);
     }
 }
