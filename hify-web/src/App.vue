@@ -431,4 +431,68 @@ html, body, #app {
   background: var(--color-bg-secondary);
   padding: var(--page-padding);
 }
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: var(--sidebar-collapsed-width);
+    min-width: var(--sidebar-collapsed-width);
+  }
+
+  .sidebar .sidebar-brand {
+    padding: 16px 0 12px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .sidebar .brand-sub,
+  .sidebar .logo-dot,
+  .sidebar .nav-label,
+  .sidebar .footer-btn-text,
+  .sidebar .footer-version {
+    display: none;
+  }
+
+  .sidebar .sidebar-nav {
+    padding: 8px 0 0;
+    align-items: center;
+  }
+
+  .sidebar .nav-item {
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+  }
+
+  .sidebar .nav-item::before {
+    left: 2px;
+  }
+
+  .sidebar .sidebar-footer {
+    justify-content: center;
+    padding: 4px 0;
+  }
+
+  .sidebar .footer-btn {
+    justify-content: center;
+    width: 40px;
+    padding: 0;
+  }
+
+  .topbar {
+    padding: 0 12px;
+  }
+
+  .topbar-user {
+    gap: 0;
+  }
+
+  .user-name {
+    display: none;
+  }
+
+  .app-main {
+    padding: 16px;
+  }
+}
 </style>

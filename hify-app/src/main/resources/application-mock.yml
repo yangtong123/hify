@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:hify;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema-h2.sql
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+hify:
+  health-check:
+    enabled: false
+
+logging:
+  level:
+    com.hify: DEBUG

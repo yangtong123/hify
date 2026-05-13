@@ -1,9 +1,12 @@
 package com.hify.modules.provider.infra.adapter;
 
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
+import com.hify.modules.provider.api.dto.ChatRequest;
+import com.hify.modules.provider.api.dto.ChatResponse;
 import com.hify.modules.provider.infra.po.ProviderPo;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 public interface ProviderAdapter {
 
@@ -12,4 +15,8 @@ public interface ProviderAdapter {
     ConnectionTestResult testConnection(ProviderPo provider);
 
     List<String> listModels(ProviderPo provider);
+
+    ChatResponse chat(ProviderPo provider, ChatRequest request);
+
+    void streamChat(ProviderPo provider, ChatRequest request, Consumer<ChatResponse> chunkConsumer);
 }

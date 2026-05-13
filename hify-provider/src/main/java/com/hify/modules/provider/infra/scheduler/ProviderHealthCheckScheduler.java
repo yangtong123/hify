@@ -7,8 +7,8 @@ import com.hify.modules.provider.infra.mapper.ProviderHealthCheckMapper;
 import com.hify.modules.provider.infra.mapper.ProviderMapper;
 import com.hify.modules.provider.infra.po.ProviderHealthCheckPo;
 import com.hify.modules.provider.infra.po.ProviderPo;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.CacheManager;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -19,7 +19,6 @@ import java.util.List;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ProviderHealthCheckScheduler {
 
     private static final int DOWN_THRESHOLD = 3;
@@ -27,7 +26,17 @@ public class ProviderHealthCheckScheduler {
     private final ProviderMapper providerMapper;
     private final ProviderHealthCheckMapper healthCheckMapper;
     private final ProviderService providerService;
-    private final CacheManager cacheManager;
+
+    @Autowired(required = false)
+    private CacheManager cacheManager;
+
+    public ProviderHealthCheckScheduler(ProviderMapper providerMapper,
+                                         ProviderHealthCheckMapper healthCheckMapper,
+                                         ProviderService providerService) {
+        this.providerMapper = providerMapper;
+        this.healthCheckMapper = healthCheckMapper;
+        this.providerService = providerService;
+    }
 
     @Async("asyncExecutor")
     @Scheduled(fixedRate = 60000)
@@ -46,9 +55,11 @@ public class ProviderHealthCheckScheduler {
         }
         log.info("Health check completed for {} providers", providers.size());
 
-        var cache = cacheManager.getCache("provider-cache");
-        if (cache != null) {
-            cache.clear();
+        if (cacheManager != null) {
+            var cache = cacheManager.getCache("provider-cache");
+            if (cache != null) {
+                cache.clear();
+            }
         }
     }
 

@@ -35,9 +35,9 @@ const loading = ref(false)
 const formData = ref<T>({} as T)
 const isEdit = ref(false)
 
-function open(data?: T) {
+function open(data?: T, editMode = !!data) {
   formData.value = (data ? { ...data } : {}) as T
-  isEdit.value = !!data
+  isEdit.value = editMode
   visible.value = true
 }
 

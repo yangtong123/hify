@@ -7,6 +7,7 @@ import com.hify.common.exception.ErrorCode;
 import com.hify.common.web.PageResult;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
+import com.hify.modules.provider.api.dto.ModelConfigDto;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse.HealthSummary;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse.ModelConfigResponse;
@@ -188,6 +189,37 @@ public class ProviderServiceImpl implements ProviderService {
         return adapterFactory.getAdapter(provider.getType()).testConnection(provider);
     }
 
+    @Override
+    public ModelConfigDto getModelConfig(Long modelConfigId) {
+        ModelConfigPo model = modelConfigMapper.selectById(modelConfigId);
+        if (model == null) {
+            throw new BizException(ErrorCode.NOT_FOUND, "模型配置不存在");
+        }
+        ProviderPo provider = providerMapper.selectById(model.getProviderId());
+        return toModelConfigDto(model, provider);
+    }
+
+    @Override
+    public List<ModelConfigDto> listModelConfigsByIds(List<Long> modelConfigIds) {
+        if (modelConfigIds == null || modelConfigIds.isEmpty()) {
+            return List.of();
+        }
+        List<ModelConfigPo> models = modelConfigMapper.selectBatchIds(modelConfigIds);
+        List<Long> providerIds = models.stream()
+                .map(ModelConfigPo::getProviderId)
+                .distinct()
+                .toList();
+        Map<Long, ProviderPo> providerMap = new HashMap<>();
+        if (!providerIds.isEmpty()) {
+            for (ProviderPo provider : providerMapper.selectBatchIds(providerIds)) {
+                providerMap.put(provider.getId(), provider);
+            }
+        }
+        return models.stream()
+                .map(model -> toModelConfigDto(model, providerMap.get(model.getProviderId())))
+                .toList();
+    }
+
     private void checkNameDuplicate(String name, Long excludeId) {
         LambdaQueryWrapper<ProviderPo> wrapper = new LambdaQueryWrapper<ProviderPo>()
                 .eq(ProviderPo::getName, name);
@@ -269,5 +301,19 @@ public class ProviderServiceImpl implements ProviderService {
         resp.setEnabled(po.getEnabled());
         resp.setExtraParams(po.getExtraParams());
         return resp;
+    }
+
+    private ModelConfigDto toModelConfigDto(ModelConfigPo model, ProviderPo provider) {
+        ModelConfigDto dto = new ModelConfigDto();
+        dto.setId(model.getId());
+        dto.setProviderId(model.getProviderId());
+        dto.setName(model.getName());
+        dto.setModelId(model.getModelId());
+        dto.setContextSize(model.getContextSize());
+        dto.setEnabled(model.getEnabled());
+        if (provider != null) {
+            dto.setProviderName(provider.getName());
+        }
+        return dto;
     }
 }

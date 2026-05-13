@@ -52,38 +52,38 @@ CREATE TABLE t_provider_health (
 -- ----------------------------
 CREATE TABLE t_agent (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
-    name            VARCHAR(100)    NOT NULL COMMENT 'Agent 名称',
-    description     VARCHAR(500)    COMMENT 'Agent 描述',
+    name            VARCHAR(100)    NOT NULL,
+    description     VARCHAR(500)    NOT NULL DEFAULT '',
     system_prompt   MEDIUMTEXT      COMMENT '系统提示词',
-    model_config_id BIGINT          NOT NULL COMMENT '绑定的模型',
-    temperature     DECIMAL(3,2)    DEFAULT 0.70 COMMENT '温度参数',
-    max_tokens      INT             DEFAULT 4096 COMMENT '最大输出 token',
-    top_p           DECIMAL(3,2)    DEFAULT 1.00 COMMENT '核采样参数',
-    is_enabled      TINYINT(1)      NOT NULL DEFAULT 1,
-    config_json     JSON            COMMENT '扩展配置: 知识库检索阈值、工具调用策略等',
+    model_config_id BIGINT          NOT NULL COMMENT '绑定的模型配置 ID',
+    temperature     DECIMAL(3,2)    NOT NULL DEFAULT 0.70 COMMENT '0.00~2.00',
+    max_tokens      INT             NOT NULL DEFAULT 4096 COMMENT '最大输出 token 数',
+    top_p           DECIMAL(3,2)    NOT NULL DEFAULT 1.00 COMMENT '核采样参数',
+    max_context_turns INT           NOT NULL DEFAULT 10 COMMENT '保留最近 N 轮上下文',
+    config_json     JSON            COMMENT '扩展配置：openingMessage、suggestedQuestions、maxIterations 等',
+    enabled         TINYINT(1)      NOT NULL DEFAULT 1,
     created_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     deleted         TINYINT(1)      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
-    INDEX idx_name_deleted (name, deleted),
-    INDEX idx_model_deleted (model_config_id, deleted)
+    UNIQUE INDEX uk_agent_name_deleted (name, deleted),
+    INDEX idx_agent_model_deleted (model_config_id, deleted)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent 配置';
 
 -- ----------------------------
--- 5. Agent 与 MCP 工具关联
+-- 5. Agent 与 MCP Server 关联
 -- ----------------------------
-CREATE TABLE t_agent_tool (
+CREATE TABLE t_agent_mcp (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
     agent_id        BIGINT          NOT NULL COMMENT 'Agent ID',
-    mcp_server_id   BIGINT          NOT NULL COMMENT 'MCP 服务 ID',
-    tool_name       VARCHAR(200)    NOT NULL COMMENT '工具名称',
+    mcp_server_id   BIGINT          NOT NULL COMMENT 'MCP Server ID',
     created_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     deleted         TINYINT(1)      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
-    INDEX idx_agent_deleted (agent_id, deleted),
-    UNIQUE INDEX idx_agent_server_tool (agent_id, mcp_server_id, tool_name, deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent 关联 MCP 工具';
+    UNIQUE INDEX uk_agent_mcp_server_deleted (agent_id, mcp_server_id, deleted),
+    INDEX idx_agent_mcp_agent_deleted (agent_id, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent 与 MCP Server 关联';
 
 -- ----------------------------
 -- 6. MCP 服务配置

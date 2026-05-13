@@ -18,6 +18,7 @@ import java.util.Map;
 
 @Configuration
 @EnableCaching
+@org.springframework.context.annotation.Profile("!mock")
 public class CacheConfig {
 
     @Bean

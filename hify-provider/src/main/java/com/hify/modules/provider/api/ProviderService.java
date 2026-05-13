@@ -2,6 +2,7 @@ package com.hify.modules.provider.api;
 
 import com.hify.common.web.PageResult;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
+import com.hify.modules.provider.api.dto.ModelConfigDto;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse;
 import com.hify.modules.provider.api.dto.ProviderQuery;
 import com.hify.modules.provider.api.dto.ProviderRequest;
@@ -22,4 +23,8 @@ public interface ProviderService {
     PageResult<List<ProviderResponse>> list(ProviderQuery query);
 
     ConnectionTestResult testConnection(Long id);
+
+    ModelConfigDto getModelConfig(Long modelConfigId);
+
+    List<ModelConfigDto> listModelConfigsByIds(List<Long> modelConfigIds);
 }

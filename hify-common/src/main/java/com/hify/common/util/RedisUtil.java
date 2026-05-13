@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.TimeUnit;
 
 @Component
+@org.springframework.context.annotation.Profile("!mock")
 @RequiredArgsConstructor
 public class RedisUtil {
 

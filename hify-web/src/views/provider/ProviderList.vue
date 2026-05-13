@@ -57,7 +57,7 @@ const tableRef = ref<{ refresh: () => Promise<void> }>()
    Dialog & Form
    ============================================================ */
 const dialogVisible = ref(false)
-const dialogRef = ref<{ open: (data?: Record<string, unknown>) => void }>()
+const dialogRef = ref<{ open: (data?: Record<string, unknown>, editMode?: boolean) => void }>()
 const isEditMode = ref(false)
 const editingId = ref<number | null>(null)
 
@@ -78,7 +78,7 @@ const formRules: FormRules = {
 function handleCreate() {
   isEditMode.value = false
   editingId.value = null
-  dialogRef.value?.open({ enabled: 1, name: '', type: '', baseUrl: '', apiKey: '' })
+  dialogRef.value?.open({ enabled: 1, name: '', type: '', baseUrl: '', apiKey: '' }, false)
 }
 
 function handleEdit(row: ProviderResponse) {
@@ -90,7 +90,7 @@ function handleEdit(row: ProviderResponse) {
     baseUrl: row.baseUrl,
     apiKey: row.authConfig?.apiKey || '',
     enabled: row.enabled,
-  })
+  }, true)
 }
 
 async function handleSubmit(form: Record<string, unknown>) {

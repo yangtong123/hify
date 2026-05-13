@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 
+import java.lang.reflect.Field;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -47,8 +48,11 @@ class ProviderHealthCheckSchedulerTest {
     private ProviderHealthCheckScheduler scheduler;
 
     @BeforeEach
-    void setUp() {
-        scheduler = new ProviderHealthCheckScheduler(providerMapper, healthCheckMapper, providerService, cacheManager);
+    void setUp() throws Exception {
+        scheduler = new ProviderHealthCheckScheduler(providerMapper, healthCheckMapper, providerService);
+        Field cmField = ProviderHealthCheckScheduler.class.getDeclaredField("cacheManager");
+        cmField.setAccessible(true);
+        cmField.set(scheduler, cacheManager);
     }
 
     @Test

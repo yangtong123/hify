@@ -218,3 +218,21 @@ body {
   box-shadow: var(--shadow-sm);
   padding: var(--card-padding);
 }
+
+@media (max-width: 640px) {
+  :root {
+    --page-padding: 16px;
+    --card-padding: 16px;
+    --section-gap: 12px;
+  }
+
+  .el-dialog {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px);
+  }
+
+  .el-dialog__body {
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+  }
+}
