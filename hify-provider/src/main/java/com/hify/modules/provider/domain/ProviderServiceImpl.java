@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
 import com.hify.common.web.PageResult;
+import com.hify.modules.provider.api.dto.ChatRequest;
+import com.hify.modules.provider.api.dto.ChatResponse;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
 import com.hify.modules.provider.api.dto.ModelConfigDto;
@@ -32,6 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
@@ -220,6 +224,20 @@ public class ProviderServiceImpl implements ProviderService {
                 .toList();
     }
 
+    @Override
+    public ChatResponse chat(Long modelConfigId, ChatRequest request) {
+        ChatInvocation invocation = buildChatInvocation(modelConfigId, request);
+        return adapterFactory.getAdapter(invocation.provider().getType())
+                .chat(invocation.provider(), invocation.request());
+    }
+
+    @Override
+    public void streamChat(Long modelConfigId, ChatRequest request, Consumer<ChatResponse> chunkConsumer) {
+        ChatInvocation invocation = buildChatInvocation(modelConfigId, request);
+        adapterFactory.getAdapter(invocation.provider().getType())
+                .streamChat(invocation.provider(), invocation.request(), chunkConsumer);
+    }
+
     private void checkNameDuplicate(String name, Long excludeId) {
         LambdaQueryWrapper<ProviderPo> wrapper = new LambdaQueryWrapper<ProviderPo>()
                 .eq(ProviderPo::getName, name);
@@ -315,5 +333,30 @@ public class ProviderServiceImpl implements ProviderService {
             dto.setProviderName(provider.getName());
         }
         return dto;
+    }
+
+    private ChatInvocation buildChatInvocation(Long modelConfigId, ChatRequest request) {
+        if (request == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "聊天请求不能为空");
+        }
+        ModelConfigPo model = modelConfigMapper.selectById(modelConfigId);
+        if (model == null) {
+            throw new BizException(ErrorCode.NOT_FOUND, "模型配置不存在");
+        }
+        if (!Objects.equals(model.getEnabled(), 1)) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "模型配置未启用: " + modelConfigId);
+        }
+        ProviderPo provider = providerMapper.selectById(model.getProviderId());
+        if (provider == null) {
+            throw new BizException(ErrorCode.NOT_FOUND, "提供商不存在");
+        }
+        if (!Objects.equals(provider.getEnabled(), 1)) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "提供商未启用: " + provider.getId());
+        }
+        request.setModel(model.getModelId());
+        return new ChatInvocation(provider, request);
+    }
+
+    private record ChatInvocation(ProviderPo provider, ChatRequest request) {
     }
 }

@@ -108,7 +108,7 @@ CREATE INDEX idx_type_enabled ON t_mcp_server(server_type, is_enabled, deleted);
 
 -- Mock profile seed data for API verification.
 INSERT INTO t_provider (id, name, type, base_url, auth_config, enabled, created_at, updated_at, deleted)
-VALUES (1, 'Mock OpenAI', 'OPENAI', 'https://api.openai.com/v1', NULL, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
+VALUES (1, 'Mock Provider', 'mock', 'http://mock.local', NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
 
 INSERT INTO t_model_config (id, provider_id, name, model_id, context_size, extra_params, enabled, created_at, updated_at, deleted)
 VALUES (1, 1, 'Mock GPT', 'gpt-mock', 128000, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
