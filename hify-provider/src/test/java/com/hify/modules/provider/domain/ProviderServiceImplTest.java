@@ -169,6 +169,26 @@ class ProviderServiceImplTest {
     }
 
     @Test
+    void listAvailableModelConfigsShouldOnlyReturnModelsFromEnabledProviders() {
+        ModelConfigPo enabledModel = modelPo(101L, 1L, "gpt-4o", 1);
+        ModelConfigPo disabledProviderModel = modelPo(102L, 2L, "claude-sonnet", 1);
+        when(modelConfigMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(enabledModel, disabledProviderModel));
+
+        ProviderPo enabledProvider = providerPo(1L, "OpenAI", "openai", "sk-live-key");
+        ProviderPo disabledProvider = providerPo(2L, "Anthropic", "anthropic", "sk-live-key");
+        disabledProvider.setEnabled(0);
+        when(providerMapper.selectBatchIds(List.of(1L, 2L)))
+                .thenReturn(List.of(enabledProvider, disabledProvider));
+
+        var result = providerService.listAvailableModelConfigs();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getModelId()).isEqualTo("gpt-4o");
+        assertThat(result.get(0).getProviderName()).isEqualTo("OpenAI");
+    }
+
+    @Test
     void testConnectionShouldDelegateToAdapter() {
         ProviderPo provider = providerPo(1L, "OpenAI", "openai", "sk-live-key");
         provider.setBaseUrl("https://api.openai.com/");
@@ -176,6 +196,8 @@ class ProviderServiceImplTest {
         when(adapterFactory.getAdapter("openai")).thenReturn(providerAdapter);
         when(providerAdapter.testConnection(provider))
                 .thenReturn(ConnectionTestResult.success(150L, 2));
+        when(providerAdapter.listModels(provider)).thenReturn(List.of("gpt-4o", "gpt-4.1"));
+        when(modelConfigMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
         ConnectionTestResult result = providerService.testConnection(1L);
 
@@ -184,6 +206,27 @@ class ProviderServiceImplTest {
         assertThat(result.getLatencyMs()).isEqualTo(150L);
         verify(adapterFactory).getAdapter("openai");
         verify(providerAdapter).testConnection(provider);
+    }
+
+    @Test
+    void testConnectionShouldSyncDiscoveredModels() {
+        ProviderPo provider = providerPo(1L, "OpenAI", "openai", "sk-live-key");
+        when(providerMapper.selectById(1L)).thenReturn(provider);
+        when(adapterFactory.getAdapter("openai")).thenReturn(providerAdapter);
+        when(providerAdapter.testConnection(provider)).thenReturn(ConnectionTestResult.success(150L, 1));
+        when(providerAdapter.listModels(provider)).thenReturn(List.of("gpt-4o", "gpt-4.1"));
+        when(modelConfigMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(modelPo(101L, 1L, "gpt-4o", 1)));
+
+        ConnectionTestResult result = providerService.testConnection(1L);
+
+        assertThat(result.getModelCount()).isEqualTo(2);
+        ArgumentCaptor<ModelConfigPo> captor = ArgumentCaptor.forClass(ModelConfigPo.class);
+        verify(modelConfigMapper).insert(captor.capture());
+        assertThat(captor.getValue())
+                .extracting(ModelConfigPo::getProviderId, ModelConfigPo::getName, ModelConfigPo::getModelId,
+                        ModelConfigPo::getContextSize, ModelConfigPo::getEnabled)
+                .containsExactly(1L, "gpt-4.1", "gpt-4.1", 128000, 1);
     }
 
     @Test
@@ -238,6 +281,17 @@ class ProviderServiceImplTest {
         po.setEnabled(1);
         po.setCreatedAt(LocalDateTime.parse("2026-05-11T10:00:00"));
         po.setUpdatedAt(LocalDateTime.parse("2026-05-11T10:00:00"));
+        return po;
+    }
+
+    private ModelConfigPo modelPo(Long id, Long providerId, String modelId, Integer enabled) {
+        ModelConfigPo po = new ModelConfigPo();
+        po.setId(id);
+        po.setProviderId(providerId);
+        po.setName(modelId);
+        po.setModelId(modelId);
+        po.setContextSize(128000);
+        po.setEnabled(enabled);
         return po;
     }
 

@@ -4,6 +4,7 @@ import com.hify.common.web.PageResult;
 import com.hify.common.web.Result;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
+import com.hify.modules.provider.api.dto.ModelConfigDto;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse;
 import com.hify.modules.provider.api.dto.ProviderQuery;
 import com.hify.modules.provider.api.dto.ProviderRequest;
@@ -87,6 +88,17 @@ class ProviderControllerTest {
         Result<List<ProviderResponse>> result = controller.list(query);
 
         assertThat(result.getData()).isSameAs(responses);
+    }
+
+    @Test
+    void listAvailableModelsShouldWrapServiceResponse() {
+        ModelConfigDto model = new ModelConfigDto();
+        model.setId(10L);
+        when(providerService.listAvailableModelConfigs()).thenReturn(List.of(model));
+
+        Result<List<ModelConfigDto>> result = controller.listAvailableModels();
+
+        assertThat(result.getData()).containsExactly(model);
     }
 
     @Test

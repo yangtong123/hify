@@ -4,6 +4,7 @@ import com.hify.common.web.PageResult;
 import com.hify.common.web.Result;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
+import com.hify.modules.provider.api.dto.ModelConfigDto;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse;
 import com.hify.modules.provider.api.dto.ProviderQuery;
 import com.hify.modules.provider.api.dto.ProviderRequest;
@@ -98,6 +99,15 @@ public class ProviderController {
             @Parameter(description = "查询条件：providerType、isEnabled、page、size")
             ProviderQuery query) {
         return providerService.list(query);
+    }
+
+    @Operation(summary = "查询可用模型列表", description = "查询所有启用 Provider 下的启用模型配置，供 Agent 绑定模型使用")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功")
+    })
+    @GetMapping("/models")
+    public Result<List<ModelConfigDto>> listAvailableModels() {
+        return Result.ok(providerService.listAvailableModelConfigs());
     }
 
     @Operation(summary = "连通性测试", description = "对指定提供商发起连通性测试，根据 providerType 分发到不同的测试端点")

@@ -43,6 +43,16 @@ export interface ModelConfigResponse {
   extraParams: unknown
 }
 
+export interface ModelConfigDto {
+  id: number
+  providerId: number
+  providerName: string
+  name: string
+  modelId: string
+  contextSize: number | null
+  enabled: number
+}
+
 export interface HealthSummary {
   status: string
   lastCheckAt: string
@@ -85,6 +95,11 @@ export async function getProviderList(params: {
 
 export async function getProviderDetail(id: number): Promise<ProviderDetailResponse> {
   const res: any = await http.get(`/providers/${id}`)
+  return res.data
+}
+
+export async function getAvailableModels(): Promise<ModelConfigDto[]> {
+  const res: any = await http.get('/providers/models')
   return res.data
 }
 

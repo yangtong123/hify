@@ -18,10 +18,8 @@ import {
   type AgentRequest,
 } from '@/api/agent'
 import {
-  getProviderDetail,
-  getProviderList,
-  type ModelConfigResponse,
-  type ProviderResponse,
+  getAvailableModels,
+  type ModelConfigDto,
 } from '@/api/provider'
 import { getMcpServers, type McpServerResponse } from '@/api/mcp'
 
@@ -105,30 +103,19 @@ function defaultForm(): AgentForm {
 async function loadOptions() {
   loadingOptions.value = true
   try {
-    const [providers, servers] = await Promise.all([
-      getProviderList({ page: 1, size: 100 }),
+    const [models, servers] = await Promise.all([
+      getAvailableModels(),
       getMcpServers({ enabled: 1 }),
     ])
 
-    const details = await Promise.all(
-      providers.records.map((provider: ProviderResponse) => getProviderDetail(provider.id)),
-    )
-    const models: ModelOption[] = []
-    for (const detail of details) {
-      for (const model of detail.models || []) {
-        if (model.enabled === 1) {
-          models.push(toModelOption(detail.name, model))
-        }
-      }
-    }
-    modelOptions.value = models
+    modelOptions.value = models.map(toModelOption)
     mcpServers.value = servers
   } finally {
     loadingOptions.value = false
   }
 }
 
-function toModelOption(providerName: string, model: ModelConfigResponse): ModelOption {
+function toModelOption(model: ModelConfigDto): ModelOption {
   const context = model.contextSize
     ? model.contextSize >= 1000
       ? `${Math.round(model.contextSize / 1000)}K`
@@ -136,10 +123,10 @@ function toModelOption(providerName: string, model: ModelConfigResponse): ModelO
     : '-'
   return {
     id: model.id,
-    label: `${providerName} / ${model.name} · ${context}`,
-    providerName,
+    label: `${model.providerName} / ${model.name} · ${context}`,
+    providerName: model.providerName,
     modelName: model.name,
-    contextSize: model.contextSize,
+    contextSize: model.contextSize ?? 0,
   }
 }
 
@@ -304,6 +291,7 @@ onMounted(() => {
           v-model="data.modelConfigId"
           :loading="loadingOptions"
           placeholder="请选择模型"
+          no-data-text="暂无可用模型，请先在提供商页面测试连接同步模型"
           style="width: 100%"
           filterable
         >

@@ -25,6 +25,8 @@ public interface ProviderService {
 
     PageResult<List<ProviderResponse>> list(ProviderQuery query);
 
+    List<ModelConfigDto> listAvailableModelConfigs();
+
     ConnectionTestResult testConnection(Long id);
 
     ModelConfigDto getModelConfig(Long modelConfigId);

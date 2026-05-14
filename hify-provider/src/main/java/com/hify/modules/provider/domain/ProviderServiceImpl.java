@@ -150,6 +150,34 @@ public class ProviderServiceImpl implements ProviderService {
         return PageResult.ok(list, result.getTotal(), query.getPage(), query.getSize());
     }
 
+    @Override
+    public List<ModelConfigDto> listAvailableModelConfigs() {
+        List<ModelConfigPo> models = modelConfigMapper.selectList(
+                new LambdaQueryWrapper<ModelConfigPo>()
+                        .eq(ModelConfigPo::getEnabled, 1)
+                        .orderByAsc(ModelConfigPo::getProviderId)
+                        .orderByAsc(ModelConfigPo::getId));
+        if (models.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> providerIds = models.stream()
+                .map(ModelConfigPo::getProviderId)
+                .distinct()
+                .toList();
+        Map<Long, ProviderPo> providerMap = new HashMap<>();
+        for (ProviderPo provider : providerMapper.selectBatchIds(providerIds)) {
+            if (Objects.equals(provider.getEnabled(), 1)) {
+                providerMap.put(provider.getId(), provider);
+            }
+        }
+
+        return models.stream()
+                .filter(model -> providerMap.containsKey(model.getProviderId()))
+                .map(model -> toModelConfigDto(model, providerMap.get(model.getProviderId())))
+                .toList();
+    }
+
     private void enrichWithHealth(List<ProviderResponse> list, List<Long> providerIds) {
         List<ProviderHealthCheckPo> healthRecords = healthCheckMapper.selectList(
                 new LambdaQueryWrapper<ProviderHealthCheckPo>()
@@ -184,13 +212,24 @@ public class ProviderServiceImpl implements ProviderService {
     }
 
     @Override
+    @Transactional
+    @CacheEvict(cacheNames = "provider-cache", allEntries = true)
     public ConnectionTestResult testConnection(Long id) {
         ProviderPo provider = providerMapper.selectById(id);
         if (provider == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "提供商不存在");
         }
 
-        return adapterFactory.getAdapter(provider.getType()).testConnection(provider);
+        var adapter = adapterFactory.getAdapter(provider.getType());
+        ConnectionTestResult result = adapter.testConnection(provider);
+        if (result.isSuccess()) {
+            List<String> modelIds = adapter.listModels(provider);
+            if (modelIds != null) {
+                syncModelConfigs(provider.getId(), modelIds);
+                result.setModelCount(modelIds.size());
+            }
+        }
+        return result;
     }
 
     @Override
@@ -247,6 +286,61 @@ public class ProviderServiceImpl implements ProviderService {
         if (providerMapper.exists(wrapper)) {
             throw new BizException(ErrorCode.PARAM_ERROR, "提供商名称已存在: " + name);
         }
+    }
+
+    private void syncModelConfigs(Long providerId, List<String> modelIds) {
+        if (modelIds == null || modelIds.isEmpty()) {
+            return;
+        }
+
+        List<ModelConfigPo> existingModels = modelConfigMapper.selectList(
+                new LambdaQueryWrapper<ModelConfigPo>()
+                        .eq(ModelConfigPo::getProviderId, providerId));
+        if (existingModels == null) {
+            existingModels = List.of();
+        }
+        Map<String, ModelConfigPo> existingByModelId = new HashMap<>();
+        for (ModelConfigPo model : existingModels) {
+            existingByModelId.put(model.getModelId(), model);
+        }
+
+        for (String modelId : modelIds.stream().filter(this::hasText).distinct().toList()) {
+            if (existingByModelId.containsKey(modelId)) {
+                continue;
+            }
+
+            ModelConfigPo model = new ModelConfigPo();
+            model.setProviderId(providerId);
+            model.setName(modelId);
+            model.setModelId(modelId);
+            model.setContextSize(inferContextSize(modelId));
+            model.setEnabled(1);
+            modelConfigMapper.insert(model);
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private Integer inferContextSize(String modelId) {
+        if (modelId == null) {
+            return null;
+        }
+        String normalized = modelId.toLowerCase();
+        if (normalized.contains("128k") || normalized.contains("gpt-4o") || normalized.contains("gpt-4.1")) {
+            return 128000;
+        }
+        if (normalized.contains("32k")) {
+            return 32000;
+        }
+        if (normalized.contains("16k")) {
+            return 16000;
+        }
+        if (normalized.contains("8k")) {
+            return 8000;
+        }
+        return null;
     }
 
     private HealthSummary computeHealth(Long providerId) {
