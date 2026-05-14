@@ -129,6 +129,10 @@ public class LlmHttpClient {
             log.info("LLM STREAM {} -> {} ({}ms)", url, status, duration);
         } catch (LlmApiException e) {
             throw e;
+        } catch (RuntimeException e) {
+            long duration = System.currentTimeMillis() - start;
+            log.warn("LLM STREAM {} interrupted by callback ({}ms): {}", url, duration, e.getMessage());
+            throw e;
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - start;
             log.error("LLM STREAM {} -> {} ({}ms): {}", url, status, duration, e.getMessage());
