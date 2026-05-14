@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ChatLineRound, Delete, Plus, Promotion, Refresh } from '@element-plus/icons-vue'
+import { marked } from 'marked'
 import PageHeader from '@/components/PageHeader.vue'
 import { getAgentList, type AgentListResponse } from '@/api/agent'
 import {
@@ -274,6 +275,13 @@ function tempMessage(role: 'user' | 'assistant', content: string): ChatMessageVi
   }
 }
 
+function renderAssistantContent(content: string) {
+  return marked.parse(content, {
+    async: false,
+    breaks: true,
+  }) as string
+}
+
 async function scrollToBottom() {
   await nextTick()
   const container = messageListRef.value
@@ -370,7 +378,12 @@ function sessionTime(session: ChatSessionResponse) {
           >
             <div class="message-bubble">
               <strong>{{ message.role === 'user' ? 'User' : 'Assistant' }}</strong>
-              <p v-if="message.content">{{ message.content }}</p>
+              <div
+                v-if="message.content && message.role === 'assistant'"
+                class="markdown-content"
+                v-html="renderAssistantContent(message.content)"
+              />
+              <p v-else-if="message.content">{{ message.content }}</p>
               <div v-else-if="message.pending" class="typing-indicator" aria-label="AI 正在回复">
                 <span />
                 <span />
@@ -566,6 +579,36 @@ function sessionTime(session: ChatSessionResponse) {
 .message-bubble p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.markdown-content {
+  overflow-wrap: anywhere;
+}
+
+.markdown-content :deep(p) {
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+}
+
+.markdown-content :deep(:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-content :deep(pre) {
+  margin: 8px 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.markdown-content :deep(code),
+.markdown-content :deep(pre code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.markdown-content :deep(ul),
+.markdown-content :deep(ol) {
+  margin: 8px 0;
+  padding-left: 20px;
 }
 
 .typing-indicator {
