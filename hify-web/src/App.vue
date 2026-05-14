@@ -426,6 +426,7 @@ html, body, #app {
    ============================================================ */
 .app-main {
   flex: 1;
+  min-height: 0;
   min-width: 0;
   overflow-y: auto;
   background: var(--color-bg-secondary);

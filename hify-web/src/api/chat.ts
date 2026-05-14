@@ -86,6 +86,7 @@ export async function streamChatMessage(
   handlers: {
     onSession?: (session: ChatSessionResponse) => void
     onDelta?: (chunk: ChatStreamChunk) => void
+    onDone?: (chunk: ChatStreamChunk) => void
     onComplete?: (response: ChatCompletionResponse) => void
     onError?: (message: string) => void
   },
@@ -115,7 +116,7 @@ export async function streamChatMessage(
       break
     }
     buffer += decoder.decode(value, { stream: true })
-    const events = buffer.split(/\n\n/)
+    const events = buffer.split(/\r?\n\r?\n/)
     buffer = events.pop() || ''
     for (const raw of events) {
       dispatchEventBlock(raw, handlers)
@@ -131,11 +132,12 @@ function dispatchEventBlock(
   handlers: {
     onSession?: (session: ChatSessionResponse) => void
     onDelta?: (chunk: ChatStreamChunk) => void
+    onDone?: (chunk: ChatStreamChunk) => void
     onComplete?: (response: ChatCompletionResponse) => void
     onError?: (message: string) => void
   },
 ) {
-  const lines = block.split(/\n/)
+  const lines = block.split(/\r?\n/)
   const eventName = lines.find((line) => line.startsWith('event:'))?.slice(6).trim()
   const dataLines = lines
     .filter((line) => line.startsWith('data:'))
@@ -147,7 +149,7 @@ function dispatchEventBlock(
   const payload = dataLines.join('\n')
   if (eventName === 'error') {
     handlers.onError?.(payload)
-    return
+    throw new Error(payload || '流式响应失败')
   }
 
   const parsed = JSON.parse(payload)
@@ -155,6 +157,11 @@ function dispatchEventBlock(
     handlers.onSession?.(parsed)
   } else if (eventName === 'delta') {
     handlers.onDelta?.(parsed)
+    if (parsed.done) {
+      handlers.onDone?.(parsed)
+    }
+  } else if (eventName === 'done') {
+    handlers.onDone?.(parsed)
   } else if (eventName === 'complete') {
     handlers.onComplete?.(parsed)
   }
