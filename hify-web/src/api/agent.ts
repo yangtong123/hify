@@ -21,6 +21,7 @@ export interface AgentListResponse {
   configJson: AgentConfig | null
   enabled: number
   mcpServerCount: number
+  knowledgeBaseCount: number
   createdAt: string
   updatedAt: string
 }
@@ -39,9 +40,16 @@ export interface AgentMcpServerInfo {
   isEnabled: boolean
 }
 
+export interface AgentKnowledgeBaseInfo {
+  id: number
+  name: string
+  status: string
+}
+
 export interface AgentDetailResponse extends AgentListResponse {
   model: AgentModelInfo | null
   mcpServers: AgentMcpServerInfo[]
+  knowledgeBases: AgentKnowledgeBaseInfo[]
 }
 
 export interface AgentRequest {
@@ -56,6 +64,7 @@ export interface AgentRequest {
   configJson: AgentConfig | null
   enabled: number
   mcpServerIds: number[]
+  knowledgeBaseIds: number[]
 }
 
 export interface AgentToolsRequest {

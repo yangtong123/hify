@@ -26,6 +26,8 @@ import com.hify.modules.chat.infra.po.ChatSessionPo;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ModelConfigDto;
+import com.hify.modules.knowledge.api.KnowledgeService;
+import com.hify.modules.knowledge.api.dto.RetrievedChunkDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -59,6 +61,7 @@ public class ChatServiceImpl implements ChatService {
     private final ChatMessageMapper messageMapper;
     private final AgentService agentService;
     private final ProviderService providerService;
+    private final KnowledgeService knowledgeService;
     private final Executor llmExecutor;
     private final TransactionTemplate transactionTemplate;
 
@@ -66,12 +69,14 @@ public class ChatServiceImpl implements ChatService {
                            ChatMessageMapper messageMapper,
                            AgentService agentService,
                            ProviderService providerService,
+                           KnowledgeService knowledgeService,
                            @Qualifier("llmExecutor") Executor llmExecutor,
                            TransactionTemplate transactionTemplate) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
         this.agentService = agentService;
         this.providerService = providerService;
+        this.knowledgeService = knowledgeService;
         this.llmExecutor = llmExecutor;
         this.transactionTemplate = transactionTemplate;
     }
@@ -304,6 +309,10 @@ public class ChatServiceImpl implements ChatService {
         if (StringUtils.hasText(resolved.agent().getSystemPrompt())) {
             messages.add(toProviderMessage("system", resolved.agent().getSystemPrompt()));
         }
+        String knowledgeContext = buildKnowledgeContext(resolved.agent().getId(), currentUserContent);
+        if (StringUtils.hasText(knowledgeContext)) {
+            messages.add(toProviderMessage("system", knowledgeContext));
+        }
 
         int maxTurns = resolved.agent().getMaxContextTurns() != null ? resolved.agent().getMaxContextTurns() : 10;
         int maxMessages = Math.max(maxTurns * 2, 1);
@@ -322,6 +331,41 @@ public class ChatServiceImpl implements ChatService {
             messages.add(toProviderMessage("user", currentUserContent));
         }
         return messages;
+    }
+
+    private String buildKnowledgeContext(Long agentId, String currentUserContent) {
+        List<RetrievedChunkDto> chunks = knowledgeService.retrieveForAgent(agentId, currentUserContent);
+        if (chunks.isEmpty()) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("请优先根据以下公司知识库资料回答用户问题。")
+                .append("如果资料不足以确认答案，请明确说明无法从现有资料确认，不要编造公司政策。\n\n");
+        int index = 1;
+        for (RetrievedChunkDto chunk : chunks) {
+            builder.append("[资料 ").append(index).append("]\n");
+            builder.append("来源：");
+            if (StringUtils.hasText(chunk.getDocumentTitle())) {
+                builder.append(chunk.getDocumentTitle());
+            } else if (StringUtils.hasText(chunk.getFileName())) {
+                builder.append(chunk.getFileName());
+            } else {
+                builder.append("文档 ").append(chunk.getDocumentId());
+            }
+            if (chunk.getPageNumber() != null) {
+                builder.append("，第 ").append(chunk.getPageNumber()).append(" 页");
+            }
+            if (StringUtils.hasText(chunk.getSectionTitle())) {
+                builder.append("，").append(chunk.getSectionTitle());
+            }
+            builder.append("，chunkId=").append(chunk.getChunkId());
+            if (chunk.getSimilarity() != null) {
+                builder.append("，相似度=").append(String.format("%.4f", chunk.getSimilarity()));
+            }
+            builder.append("\n内容：").append(chunk.getContent()).append("\n\n");
+            index++;
+        }
+        return builder.toString();
     }
 
     private ChatRequest.Message toProviderMessage(String role, String content) {

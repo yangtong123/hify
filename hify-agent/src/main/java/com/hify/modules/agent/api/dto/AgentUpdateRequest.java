@@ -45,4 +45,6 @@ public class AgentUpdateRequest {
     private Integer enabled;
 
     private List<Long> mcpServerIds;
+
+    private List<Long> knowledgeBaseIds;
 }

@@ -12,6 +12,7 @@ import com.hify.modules.chat.infra.mapper.ChatMessageMapper;
 import com.hify.modules.chat.infra.mapper.ChatSessionMapper;
 import com.hify.modules.chat.infra.po.ChatMessagePo;
 import com.hify.modules.chat.infra.po.ChatSessionPo;
+import com.hify.modules.knowledge.api.KnowledgeService;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ChatResponse;
@@ -53,6 +54,9 @@ class ChatServiceImplTest {
     @Mock
     private ProviderService providerService;
 
+    @Mock
+    private KnowledgeService knowledgeService;
+
     private final List<ChatSessionPo> sessions = new ArrayList<>();
     private final List<ChatMessagePo> messages = new ArrayList<>();
     private ChatServiceImpl chatService;
@@ -60,10 +64,11 @@ class ChatServiceImplTest {
     @BeforeEach
     void setUp() {
         Executor directExecutor = Runnable::run;
-        chatService = new ChatServiceImpl(sessionMapper, messageMapper, agentService, providerService, directExecutor, null);
+        chatService = new ChatServiceImpl(sessionMapper, messageMapper, agentService, providerService, knowledgeService, directExecutor, null);
         stubPersistence();
         when(agentService.getById(1L)).thenReturn(agent());
         when(providerService.getModelConfig(10L)).thenReturn(model());
+        when(knowledgeService.retrieveForAgent(eq(1L), any())).thenReturn(List.of());
     }
 
     @Test

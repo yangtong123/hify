@@ -45,4 +45,6 @@ public class AgentCreateRequest {
     private Integer enabled;
 
     private List<Long> mcpServerIds;
+
+    private List<Long> knowledgeBaseIds;
 }

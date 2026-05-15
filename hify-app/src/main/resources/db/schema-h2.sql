@@ -152,7 +152,72 @@ CREATE TABLE t_chat_message (
 CREATE INDEX idx_session_cursor ON t_chat_message(session_id, deleted, created_at, id);
 
 -- ----------------------------
--- 9. Demo 演示
+-- 9. 知识库
+-- ----------------------------
+CREATE TABLE t_knowledge_base (
+    id                        BIGINT          NOT NULL AUTO_INCREMENT,
+    name                      VARCHAR(100)    NOT NULL,
+    description               VARCHAR(500)    NOT NULL DEFAULT '',
+    embedding_model_config_id BIGINT          NOT NULL,
+    embedding_dimension       INT             NOT NULL,
+    chunk_size                INT             NOT NULL DEFAULT 1000,
+    chunk_overlap             INT             NOT NULL DEFAULT 150,
+    top_k                     INT             NOT NULL DEFAULT 5,
+    similarity_threshold      DECIMAL(6,4)    NOT NULL DEFAULT 0.7000,
+    status                    VARCHAR(30)     NOT NULL DEFAULT 'ACTIVE',
+    created_at                TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted                   INTEGER         NOT NULL DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX uk_knowledge_base_name_deleted ON t_knowledge_base(name, deleted);
+CREATE INDEX idx_knowledge_base_status_deleted ON t_knowledge_base(status, deleted);
+
+-- ----------------------------
+-- 10. 知识库文档
+-- ----------------------------
+CREATE TABLE t_knowledge_document (
+    id                BIGINT          NOT NULL AUTO_INCREMENT,
+    knowledge_base_id BIGINT          NOT NULL,
+    file_name         VARCHAR(255)    NOT NULL,
+    file_type         VARCHAR(30)     NOT NULL,
+    file_size         BIGINT          NOT NULL,
+    storage_path      VARCHAR(500)    NOT NULL,
+    content_hash      VARCHAR(64)     NOT NULL,
+    title             VARCHAR(255),
+    process_status    VARCHAR(30)     NOT NULL DEFAULT 'PENDING',
+    chunk_count       INT             NOT NULL DEFAULT 0,
+    error_message     VARCHAR(1000),
+    processed_at      TIMESTAMP,
+    created_at        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted           INTEGER         NOT NULL DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX uk_knowledge_document_hash_deleted ON t_knowledge_document(knowledge_base_id, content_hash, deleted);
+CREATE INDEX idx_knowledge_document_status_deleted ON t_knowledge_document(knowledge_base_id, process_status, deleted);
+CREATE INDEX idx_knowledge_document_created ON t_knowledge_document(knowledge_base_id, deleted, created_at);
+
+-- ----------------------------
+-- 11. Agent 与知识库关联
+-- ----------------------------
+CREATE TABLE t_agent_knowledge_base (
+    id                BIGINT          NOT NULL AUTO_INCREMENT,
+    agent_id          BIGINT          NOT NULL,
+    knowledge_base_id BIGINT          NOT NULL,
+    priority          INT             NOT NULL DEFAULT 100,
+    enabled           INTEGER         NOT NULL DEFAULT 1,
+    created_at        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted           INTEGER         NOT NULL DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX uk_agent_knowledge_base_deleted ON t_agent_knowledge_base(agent_id, knowledge_base_id, deleted);
+CREATE INDEX idx_agent_knowledge_base_agent ON t_agent_knowledge_base(agent_id, enabled, deleted);
+CREATE INDEX idx_agent_knowledge_base_kb ON t_agent_knowledge_base(knowledge_base_id, deleted);
+
+-- ----------------------------
+-- 12. Demo 演示
 -- ----------------------------
 CREATE TABLE t_demo_item (
     id              BIGINT          NOT NULL AUTO_INCREMENT,

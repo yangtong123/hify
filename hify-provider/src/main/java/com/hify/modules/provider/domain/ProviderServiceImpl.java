@@ -9,6 +9,8 @@ import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ChatResponse;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
+import com.hify.modules.provider.api.dto.EmbeddingRequest;
+import com.hify.modules.provider.api.dto.EmbeddingResponse;
 import com.hify.modules.provider.api.dto.ModelConfigDto;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse.HealthSummary;
@@ -275,6 +277,26 @@ public class ProviderServiceImpl implements ProviderService {
         ChatInvocation invocation = buildChatInvocation(modelConfigId, request);
         adapterFactory.getAdapter(invocation.provider().getType())
                 .streamChat(invocation.provider(), invocation.request(), chunkConsumer);
+    }
+
+    @Override
+    public EmbeddingResponse embed(Long modelConfigId, EmbeddingRequest request) {
+        ChatInvocation invocation = buildChatInvocation(modelConfigId, toChatCompatibleRequest(request));
+        request.setModel(invocation.request().getModel());
+        return adapterFactory.getAdapter(invocation.provider().getType())
+                .embed(invocation.provider(), request);
+    }
+
+    private ChatRequest toChatCompatibleRequest(EmbeddingRequest request) {
+        if (request == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "Embedding 请求不能为空");
+        }
+        if (request.getInputs() == null || request.getInputs().isEmpty()) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "Embedding 输入不能为空");
+        }
+        ChatRequest chatRequest = new ChatRequest();
+        chatRequest.setModel(request.getModel());
+        return chatRequest;
     }
 
     private void checkNameDuplicate(String name, Long excludeId) {

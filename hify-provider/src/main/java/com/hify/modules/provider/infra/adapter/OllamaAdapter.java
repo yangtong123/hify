@@ -6,6 +6,8 @@ import com.hify.common.http.LlmHttpClient;
 import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ChatResponse;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
+import com.hify.modules.provider.api.dto.EmbeddingRequest;
+import com.hify.modules.provider.api.dto.EmbeddingResponse;
 import com.hify.modules.provider.infra.po.AuthConfig;
 import com.hify.modules.provider.infra.po.ProviderPo;
 import lombok.RequiredArgsConstructor;
@@ -80,12 +82,24 @@ public class OllamaAdapter implements ProviderAdapter {
         });
     }
 
+    @Override
+    public EmbeddingResponse embed(ProviderPo provider, EmbeddingRequest request) {
+        String url = buildEmbedUrl(provider.getBaseUrl());
+        Map<String, String> headers = buildHeaders(provider.getAuthConfig());
+        String responseBody = llmHttpClient.post(url, headers, toJson(buildEmbedBody(request)));
+        return parseEmbedResponse(responseBody, request.getModel());
+    }
+
     private String buildTestUrl(String baseUrl) {
         return stripTrailingSlash(baseUrl) + "/api/tags";
     }
 
     private String buildChatUrl(String baseUrl) {
         return stripTrailingSlash(baseUrl) + "/api/chat";
+    }
+
+    private String buildEmbedUrl(String baseUrl) {
+        return stripTrailingSlash(baseUrl) + "/api/embed";
     }
 
     private Map<String, String> buildHeaders(AuthConfig authConfig) {
@@ -146,6 +160,13 @@ public class OllamaAdapter implements ProviderAdapter {
         return options;
     }
 
+    private Map<String, Object> buildEmbedBody(EmbeddingRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", request.getModel());
+        body.put("input", request.getInputs());
+        return body;
+    }
+
     private ChatResponse parseChatResponse(String responseBody) {
         try {
             JsonNode root = objectMapper.readTree(responseBody);
@@ -153,6 +174,35 @@ public class OllamaAdapter implements ProviderAdapter {
         } catch (Exception e) {
             throw new IllegalArgumentException("Failed to parse Ollama chat response", e);
         }
+    }
+
+    private EmbeddingResponse parseEmbedResponse(String responseBody, String model) {
+        try {
+            JsonNode root = objectMapper.readTree(responseBody);
+            EmbeddingResponse response = new EmbeddingResponse();
+            response.setModel(text(root, "model") != null ? text(root, "model") : model);
+            List<List<Double>> embeddings = new ArrayList<>();
+            JsonNode values = root.get("embeddings");
+            if (values != null && values.isArray()) {
+                for (JsonNode item : values) {
+                    embeddings.add(toDoubleList(item));
+                }
+            }
+            response.setEmbeddings(embeddings);
+            return response;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse Ollama embedding response", e);
+        }
+    }
+
+    private List<Double> toDoubleList(JsonNode node) {
+        List<Double> values = new ArrayList<>();
+        if (node != null && node.isArray()) {
+            for (JsonNode value : node) {
+                values.add(value.asDouble());
+            }
+        }
+        return values;
     }
 
     private ChatResponse parseStreamLine(String line) {

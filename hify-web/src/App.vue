@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Setting, User, ChatDotRound, Fold, Expand } from '@element-plus/icons-vue'
+import { Setting, User, ChatDotRound, Fold, Expand, Collection } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,6 +10,7 @@ const isCollapsed = ref(false)
 const menuItems = [
   { path: '/providers', icon: Setting, label: '提供商管理' },
   { path: '/agents', icon: User, label: 'Agent 管理' },
+  { path: '/knowledge', icon: Collection, label: '知识库管理' },
   { path: '/chat', icon: ChatDotRound, label: '对话' },
 ]
 

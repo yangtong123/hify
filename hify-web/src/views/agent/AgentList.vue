@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElButton, ElMessage, ElTag } from 'element-plus'
-import { Delete, Edit, Tools } from '@element-plus/icons-vue'
+import { Collection, Delete, Edit, Tools } from '@element-plus/icons-vue'
 import type { FormRules } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
 import HifyTable from '@/components/HifyTable.vue'
@@ -22,6 +22,7 @@ import {
   type ModelConfigDto,
 } from '@/api/provider'
 import { getMcpServers, type McpServerResponse } from '@/api/mcp'
+import { getKnowledgeBaseList, type KnowledgeBaseResponse } from '@/api/knowledge'
 
 interface ModelOption {
   id: number
@@ -45,6 +46,7 @@ interface AgentForm {
   maxIterations: number
   enabled: number
   mcpServerIds: number[]
+  knowledgeBaseIds: number[]
 }
 
 const columns: HifyColumn[] = [
@@ -52,6 +54,7 @@ const columns: HifyColumn[] = [
   { label: '模型', prop: 'modelName', minWidth: 180, slot: 'model' },
   { label: '参数', prop: 'temperature', width: 180, slot: 'params' },
   { label: '工具', prop: 'mcpServerCount', width: 90, slot: 'tools' },
+  { label: '知识库', prop: 'knowledgeBaseCount', width: 90, slot: 'knowledge' },
   { label: '状态', prop: 'enabled', width: 80, slot: 'status' },
   { label: '创建时间', prop: 'createdAt', width: 170 },
   { label: '操作', prop: 'actions', width: 170, slot: 'actions', minWidth: 170 },
@@ -64,6 +67,7 @@ const isEditMode = ref(false)
 const editingId = ref<number | null>(null)
 const modelOptions = ref<ModelOption[]>([])
 const mcpServers = ref<McpServerResponse[]>([])
+const knowledgeBases = ref<KnowledgeBaseResponse[]>([])
 const loadingOptions = ref(false)
 
 const formRules: FormRules = {
@@ -82,6 +86,13 @@ const mcpOptions = computed(() =>
   })),
 )
 
+const knowledgeBaseOptions = computed(() =>
+  knowledgeBases.value.map((base) => ({
+    label: `${base.name} · ${base.embeddingModelName || base.embeddingModelConfigId}`,
+    value: base.id,
+  })),
+)
+
 function defaultForm(): AgentForm {
   return {
     name: '',
@@ -97,19 +108,22 @@ function defaultForm(): AgentForm {
     maxIterations: 20,
     enabled: 1,
     mcpServerIds: [],
+    knowledgeBaseIds: [],
   }
 }
 
 async function loadOptions() {
   loadingOptions.value = true
   try {
-    const [models, servers] = await Promise.all([
+    const [models, servers, knowledgeResult] = await Promise.all([
       getAvailableModels(),
       getMcpServers({ enabled: 1 }),
+      getKnowledgeBaseList({ status: 'ACTIVE', page: 1, size: 100 }),
     ])
 
     modelOptions.value = models.map(toModelOption)
     mcpServers.value = servers
+    knowledgeBases.value = knowledgeResult.records
   } finally {
     loadingOptions.value = false
   }
@@ -156,6 +170,7 @@ async function handleEdit(row: AgentListResponse) {
     maxIterations: detail.configJson?.maxIterations || 20,
     enabled: detail.enabled,
     mcpServerIds: (detail.mcpServers || []).map((server) => server.id),
+    knowledgeBaseIds: (detail.knowledgeBases || []).map((base) => base.id),
   }, true)
 }
 
@@ -175,6 +190,7 @@ async function handleSubmit(form: Record<string, unknown>) {
     maxContextTurns: Number(f.maxContextTurns),
     enabled: f.enabled ?? 1,
     mcpServerIds: f.mcpServerIds || [],
+    knowledgeBaseIds: f.knowledgeBaseIds || [],
     configJson: {
       openingMessage: f.openingMessage || undefined,
       suggestedQuestions: splitLines(f.suggestedQuestionsText),
@@ -250,6 +266,13 @@ onMounted(() => {
       <el-tag size="small" effect="plain" type="info">
         <el-icon><Tools /></el-icon>
         {{ row.mcpServerCount || 0 }}
+      </el-tag>
+    </template>
+
+    <template #knowledge="{ row }">
+      <el-tag size="small" effect="plain" type="success">
+        <el-icon><Collection /></el-icon>
+        {{ row.knowledgeBaseCount || 0 }}
       </el-tag>
     </template>
 
@@ -343,6 +366,25 @@ onMounted(() => {
             :key="server.value"
             :label="server.label"
             :value="server.value"
+          />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item label="知识库" prop="knowledgeBaseIds">
+        <el-select
+          v-model="data.knowledgeBaseIds"
+          :loading="loadingOptions"
+          placeholder="请选择 Agent 可检索的知识库"
+          style="width: 100%"
+          multiple
+          collapse-tags
+          filterable
+        >
+          <el-option
+            v-for="base in knowledgeBaseOptions"
+            :key="base.value"
+            :label="base.label"
+            :value="base.value"
           />
         </el-select>
       </el-form-item>

@@ -6,6 +6,8 @@ import com.hify.common.http.LlmHttpClient;
 import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ChatResponse;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
+import com.hify.modules.provider.api.dto.EmbeddingRequest;
+import com.hify.modules.provider.api.dto.EmbeddingResponse;
 import com.hify.modules.provider.infra.po.AuthConfig;
 import com.hify.modules.provider.infra.po.ProviderPo;
 import lombok.RequiredArgsConstructor;
@@ -80,6 +82,14 @@ public class OpenAiAdapter implements ProviderAdapter {
         });
     }
 
+    @Override
+    public EmbeddingResponse embed(ProviderPo provider, EmbeddingRequest request) {
+        String url = buildEmbeddingUrl(provider.getBaseUrl());
+        Map<String, String> headers = buildHeaders(provider.getAuthConfig());
+        String responseBody = llmHttpClient.post(url, headers, toJson(buildEmbeddingBody(request)));
+        return parseEmbeddingResponse(responseBody, request.getModel());
+    }
+
     protected String buildTestUrl(String baseUrl) {
         return stripTrailingSlash(baseUrl) + "/v1/models";
     }
@@ -90,6 +100,14 @@ public class OpenAiAdapter implements ProviderAdapter {
             return normalized + "/chat/completions";
         }
         return normalized + "/v1/chat/completions";
+    }
+
+    protected String buildEmbeddingUrl(String baseUrl) {
+        String normalized = stripTrailingSlash(baseUrl);
+        if (normalized != null && normalized.endsWith("/v1")) {
+            return normalized + "/embeddings";
+        }
+        return normalized + "/v1/embeddings";
     }
 
     protected Map<String, String> buildHeaders(AuthConfig authConfig) {
@@ -146,6 +164,13 @@ public class OpenAiAdapter implements ProviderAdapter {
         return body;
     }
 
+    protected Map<String, Object> buildEmbeddingBody(EmbeddingRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", request.getModel());
+        body.put("input", request.getInputs());
+        return body;
+    }
+
     protected ChatResponse parseChatResponse(String responseBody) {
         try {
             JsonNode root = objectMapper.readTree(responseBody);
@@ -168,6 +193,35 @@ public class OpenAiAdapter implements ProviderAdapter {
         } catch (Exception e) {
             throw new IllegalArgumentException("Failed to parse OpenAI chat response", e);
         }
+    }
+
+    protected EmbeddingResponse parseEmbeddingResponse(String responseBody, String model) {
+        try {
+            JsonNode root = objectMapper.readTree(responseBody);
+            EmbeddingResponse response = new EmbeddingResponse();
+            response.setModel(text(root, "model") != null ? text(root, "model") : model);
+            List<List<Double>> embeddings = new ArrayList<>();
+            JsonNode data = root.get("data");
+            if (data != null && data.isArray()) {
+                for (JsonNode item : data) {
+                    embeddings.add(toDoubleList(item.get("embedding")));
+                }
+            }
+            response.setEmbeddings(embeddings);
+            return response;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse OpenAI embedding response", e);
+        }
+    }
+
+    private List<Double> toDoubleList(JsonNode node) {
+        List<Double> values = new ArrayList<>();
+        if (node != null && node.isArray()) {
+            for (JsonNode value : node) {
+                values.add(value.asDouble());
+            }
+        }
+        return values;
     }
 
     protected ChatResponse parseStreamLine(String line) {

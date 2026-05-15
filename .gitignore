@@ -1,5 +1,6 @@
 .claude/settings.local.json
-.idea
+.idea/
 .vscode
 hify.iml
 hify-*/target
+data/

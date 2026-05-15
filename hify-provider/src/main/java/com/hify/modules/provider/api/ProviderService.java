@@ -4,6 +4,8 @@ import com.hify.common.web.PageResult;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
 import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ChatResponse;
+import com.hify.modules.provider.api.dto.EmbeddingRequest;
+import com.hify.modules.provider.api.dto.EmbeddingResponse;
 import com.hify.modules.provider.api.dto.ModelConfigDto;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse;
 import com.hify.modules.provider.api.dto.ProviderQuery;
@@ -36,4 +38,6 @@ public interface ProviderService {
     ChatResponse chat(Long modelConfigId, ChatRequest request);
 
     void streamChat(Long modelConfigId, ChatRequest request, Consumer<ChatResponse> chunkConsumer);
+
+    EmbeddingResponse embed(Long modelConfigId, EmbeddingRequest request);
 }

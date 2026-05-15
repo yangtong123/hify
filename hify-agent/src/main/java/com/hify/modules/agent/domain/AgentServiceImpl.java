@@ -22,6 +22,9 @@ import com.hify.modules.agent.infra.po.AgentMcpPo;
 import com.hify.modules.agent.infra.po.AgentPo;
 import com.hify.modules.mcp.api.McpService;
 import com.hify.modules.mcp.api.dto.McpServerDto;
+import com.hify.modules.knowledge.api.KnowledgeService;
+import com.hify.modules.knowledge.api.dto.AgentKnowledgeBaseRequest;
+import com.hify.modules.knowledge.api.dto.KnowledgeBaseResponse;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ModelConfigDto;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +58,7 @@ public class AgentServiceImpl implements AgentService {
     private final AgentMcpMapper agentMcpMapper;
     private final ProviderService providerService;
     private final McpService mcpService;
+    private final KnowledgeService knowledgeService;
 
     @Override
     @Transactional
@@ -66,6 +70,7 @@ public class AgentServiceImpl implements AgentService {
         AgentPo po = toPo(request);
         agentMapper.insert(po);
         replaceTools(po.getId(), mcpServerIds);
+        replaceKnowledgeBases(po.getId(), request.getKnowledgeBaseIds());
 
         return buildDetail(po);
     }
@@ -96,6 +101,7 @@ public class AgentServiceImpl implements AgentService {
 
         agentMapper.updateById(po);
         replaceTools(id, mcpServerIds);
+        replaceKnowledgeBases(id, request.getKnowledgeBaseIds());
 
         return buildDetail(po);
     }
@@ -109,6 +115,7 @@ public class AgentServiceImpl implements AgentService {
         }
         agentMapper.deleteById(id);
         deleteTools(id);
+        replaceKnowledgeBases(id, List.of());
     }
 
     @Override
@@ -201,6 +208,7 @@ public class AgentServiceImpl implements AgentService {
                 resp.setProviderName(model.getProviderName());
             }
             resp.setMcpServerCount(mcpCountMap.getOrDefault(agent.getId(), 0L).intValue());
+            resp.setKnowledgeBaseCount(knowledgeService.listAgentKnowledgeBases(agent.getId()).size());
             list.add(resp);
         }
         return list;
@@ -273,6 +281,16 @@ public class AgentServiceImpl implements AgentService {
             resp.setMcpServers(Collections.emptyList());
         }
 
+        List<KnowledgeBaseResponse> knowledgeBases = knowledgeService.listAgentKnowledgeBases(po.getId());
+        resp.setKnowledgeBaseCount(knowledgeBases.size());
+        resp.setKnowledgeBases(knowledgeBases.stream().map(item -> {
+            AgentDetailResponse.KnowledgeBaseInfo info = new AgentDetailResponse.KnowledgeBaseInfo();
+            info.setId(item.getId());
+            info.setName(item.getName());
+            info.setStatus(item.getStatus());
+            return info;
+        }).toList());
+
         return resp;
     }
 
@@ -323,6 +341,12 @@ public class AgentServiceImpl implements AgentService {
     private void deleteTools(Long agentId) {
         agentMcpMapper.delete(new LambdaQueryWrapper<AgentMcpPo>()
                 .eq(AgentMcpPo::getAgentId, agentId));
+    }
+
+    private void replaceKnowledgeBases(Long agentId, List<Long> knowledgeBaseIds) {
+        AgentKnowledgeBaseRequest request = new AgentKnowledgeBaseRequest();
+        request.setKnowledgeBaseIds(knowledgeBaseIds != null ? knowledgeBaseIds : List.of());
+        knowledgeService.updateAgentKnowledgeBases(agentId, request);
     }
 
     private <T> T defaultIfNull(T value, T defaultValue) {

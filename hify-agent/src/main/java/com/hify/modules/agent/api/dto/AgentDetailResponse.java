@@ -11,6 +11,7 @@ public class AgentDetailResponse extends AgentListResponse {
 
     private ModelInfo model;
     private List<McpServerInfo> mcpServers;
+    private List<KnowledgeBaseInfo> knowledgeBases;
 
     @Data
     public static class ModelInfo {
@@ -26,5 +27,12 @@ public class AgentDetailResponse extends AgentListResponse {
         private String name;
         private String serverType;
         private Boolean isEnabled;
+    }
+
+    @Data
+    public static class KnowledgeBaseInfo {
+        private Long id;
+        private String name;
+        private String status;
     }
 }

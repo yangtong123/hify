@@ -143,7 +143,76 @@ CREATE TABLE t_chat_message (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对话消息';
 
 -- ----------------------------
--- 9. Demo 演示
+-- 9. 知识库
+-- ----------------------------
+CREATE TABLE t_knowledge_base (
+    id                        BIGINT          NOT NULL AUTO_INCREMENT,
+    name                      VARCHAR(100)    NOT NULL COMMENT '知识库名称',
+    description               VARCHAR(500)    NOT NULL DEFAULT '' COMMENT '知识库描述',
+    embedding_model_config_id BIGINT          NOT NULL COMMENT 'Embedding 模型配置 ID',
+    embedding_dimension       INT             NOT NULL COMMENT '向量维度',
+    chunk_size                INT             NOT NULL DEFAULT 1000 COMMENT '分块大小',
+    chunk_overlap             INT             NOT NULL DEFAULT 150 COMMENT '分块重叠长度',
+    top_k                     INT             NOT NULL DEFAULT 5 COMMENT '默认召回数量',
+    similarity_threshold      DECIMAL(6,4)    NOT NULL DEFAULT 0.7000 COMMENT '相似度阈值',
+    status                    VARCHAR(30)     NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/DISABLED',
+    created_at                DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at                DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted                   TINYINT(1)      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE INDEX uk_knowledge_base_name_deleted (name, deleted),
+    INDEX idx_knowledge_base_status_deleted (status, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库';
+
+-- ----------------------------
+-- 10. 知识库文档
+-- ----------------------------
+CREATE TABLE t_knowledge_document (
+    id                BIGINT          NOT NULL AUTO_INCREMENT,
+    knowledge_base_id BIGINT          NOT NULL COMMENT '知识库 ID',
+    file_name         VARCHAR(255)    NOT NULL COMMENT '原始文件名',
+    file_type         VARCHAR(30)     NOT NULL COMMENT '文件类型',
+    file_size         BIGINT          NOT NULL COMMENT '文件大小',
+    storage_path      VARCHAR(500)    NOT NULL COMMENT '原始文件存储路径',
+    content_hash      VARCHAR(64)     NOT NULL COMMENT '内容 hash',
+    title             VARCHAR(255)    COMMENT '文档标题',
+    process_status    VARCHAR(30)     NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/PARSING/CHUNKING/EMBEDDING/COMPLETED/FAILED',
+    chunk_count       INT             NOT NULL DEFAULT 0 COMMENT '分块数量',
+    error_message     VARCHAR(1000)   COMMENT '失败原因',
+    processed_at      DATETIME(3)     COMMENT '处理完成时间',
+    created_at        DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at        DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted           TINYINT(1)      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE INDEX uk_knowledge_document_hash_deleted (knowledge_base_id, content_hash, deleted),
+    INDEX idx_knowledge_document_status_deleted (knowledge_base_id, process_status, deleted),
+    INDEX idx_knowledge_document_created (knowledge_base_id, deleted, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库文档';
+
+-- ----------------------------
+-- 11. Agent 与知识库关联
+-- ----------------------------
+CREATE TABLE t_agent_knowledge_base (
+    id                BIGINT          NOT NULL AUTO_INCREMENT,
+    agent_id          BIGINT          NOT NULL COMMENT 'Agent ID',
+    knowledge_base_id BIGINT          NOT NULL COMMENT '知识库 ID',
+    priority          INT             NOT NULL DEFAULT 100 COMMENT '优先级，数字越小越优先',
+    enabled           TINYINT(1)      NOT NULL DEFAULT 1,
+    created_at        DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at        DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted           TINYINT(1)      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE INDEX uk_agent_knowledge_base_deleted (agent_id, knowledge_base_id, deleted),
+    INDEX idx_agent_knowledge_base_agent (agent_id, enabled, deleted),
+    INDEX idx_agent_knowledge_base_kb (knowledge_base_id, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent 与知识库关联';
+
+-- PostgreSQL + pgvector 表由 KnowledgeVectorRepository 在首次写入或检索时创建：
+-- CREATE EXTENSION IF NOT EXISTS vector;
+-- CREATE TABLE knowledge_chunk (... embedding vector(1024) ...);
+
+-- ----------------------------
+-- 12. Demo 演示
 -- ----------------------------
 CREATE TABLE t_demo_item (
     id              BIGINT          NOT NULL AUTO_INCREMENT,

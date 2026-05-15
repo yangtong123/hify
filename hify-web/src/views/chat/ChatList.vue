@@ -297,6 +297,11 @@ function agentLabel(agent: AgentListResponse) {
 function sessionTime(session: ChatSessionResponse) {
   return new Date(session.updatedAt || session.createdAt).toLocaleString()
 }
+
+function sessionTitle(session: ChatSessionResponse) {
+  const title = session.title || '未命名会话'
+  return title.length > 30 ? `${title.slice(0, 30)}...` : title
+}
 </script>
 
 <template>
@@ -342,7 +347,7 @@ function sessionTime(session: ChatSessionResponse) {
             :class="{ active: activeSession?.id === session.id }"
             @click="selectSession(session)"
           >
-            <span>{{ session.title || '未命名会话' }}</span>
+            <span>{{ sessionTitle(session) }}</span>
             <small>{{ sessionTime(session) }}</small>
           </button>
           <div v-if="sessions.length === 0" class="empty-state">

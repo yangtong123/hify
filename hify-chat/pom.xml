@@ -27,6 +27,10 @@
             <groupId>com.hify</groupId>
             <artifactId>hify-provider</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.hify</groupId>
+            <artifactId>hify-knowledge</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

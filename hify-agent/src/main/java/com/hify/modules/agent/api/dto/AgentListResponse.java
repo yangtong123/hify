@@ -22,6 +22,7 @@ public class AgentListResponse {
     private AgentConfigDto configJson;
     private Integer enabled;
     private Integer mcpServerCount;
+    private Integer knowledgeBaseCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
