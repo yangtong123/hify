@@ -83,16 +83,32 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public ChatCompletionResponse completeMessage(ChatSendRequest request) {
+        log.info("Chat completion started: userId={}, agentId={}, sessionId={}, contentLength={}",
+                request != null ? request.getUserId() : null,
+                request != null ? request.getAgentId() : null,
+                request != null ? request.getSessionId() : null,
+                request != null ? lengthOf(request.getContent()) : 0);
         ResolvedChat resolved = resolveChat(request);
         ChatMessagePo userMessage = saveUserMessage(resolved.session().getId(), request.getContent());
+        log.info("Chat user message saved: sessionId={}, messageId={}, agentId={}",
+                resolved.session().getId(), userMessage.getId(), resolved.agent().getId());
 
         ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
         long start = System.currentTimeMillis();
-        com.hify.modules.provider.api.dto.ChatResponse providerResponse =
-                providerService.chat(resolved.agent().getModelConfigId(), providerRequest);
+        com.hify.modules.provider.api.dto.ChatResponse providerResponse;
+        try {
+            providerResponse = providerService.chat(resolved.agent().getModelConfigId(), providerRequest);
+        } catch (RuntimeException e) {
+            log.warn("Chat completion failed: sessionId={}, agentId={}, modelConfigId={}, latency={}ms, error={}",
+                    resolved.session().getId(), resolved.agent().getId(), resolved.agent().getModelConfigId(),
+                    System.currentTimeMillis() - start, e.getMessage());
+            throw e;
+        }
         long latencyMs = System.currentTimeMillis() - start;
 
         ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), providerResponse, latencyMs);
+        log.info("Chat assistant message saved: sessionId={}, messageId={}, agentId={}",
+                resolved.session().getId(), assistantMessage.getId(), resolved.agent().getId());
         log.info("Chat completed: sessionId={}, agentId={}, model={}, latency={}ms, tokens={}",
                 resolved.session().getId(), resolved.agent().getId(), providerResponse.getModel(),
                 latencyMs, totalTokens(providerResponse));
@@ -103,6 +119,12 @@ public class ChatServiceImpl implements ChatService {
     public SseEmitter sendMessage(ChatSendRequest request) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         AtomicBoolean closed = new AtomicBoolean(false);
+        log.info("Chat SSE request accepted: userId={}, agentId={}, sessionId={}, timeoutMs={}, contentLength={}",
+                request != null ? request.getUserId() : null,
+                request != null ? request.getAgentId() : null,
+                request != null ? request.getSessionId() : null,
+                SSE_TIMEOUT_MS,
+                request != null ? lengthOf(request.getContent()) : 0);
 
         emitter.onTimeout(() -> onTimeout(emitter, closed));
         emitter.onCompletion(() -> closed.set(true));
@@ -135,8 +157,15 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public void streamMessage(ChatSendRequest request, ChatStreamCallback callback) {
+        log.info("Chat stream started: userId={}, agentId={}, sessionId={}, contentLength={}",
+                request != null ? request.getUserId() : null,
+                request != null ? request.getAgentId() : null,
+                request != null ? request.getSessionId() : null,
+                request != null ? lengthOf(request.getContent()) : 0);
         ResolvedChat resolved = resolveChat(request);
         ChatMessagePo userMessage = saveUserMessage(resolved.session().getId(), request.getContent());
+        log.info("Chat stream user message saved: sessionId={}, messageId={}, agentId={}",
+                resolved.session().getId(), userMessage.getId(), resolved.agent().getId());
         callback.onSession(toSessionResponse(resolved.session()));
 
         ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
@@ -163,6 +192,8 @@ public class ChatServiceImpl implements ChatService {
                     state.tokenCount(),
                     state.toolCalls(),
                     state.metadata(latencyMs));
+            log.info("Chat stream assistant message saved: sessionId={}, messageId={}, agentId={}",
+                    resolved.session().getId(), assistantMessage.getId(), resolved.agent().getId());
 
             ChatStreamChunk done = new ChatStreamChunk();
             done.setSessionId(resolved.session().getId());
@@ -178,6 +209,9 @@ public class ChatServiceImpl implements ChatService {
                     || e instanceof LlmApiException) {
                 throw e;
             }
+            log.warn("Chat stream failed: sessionId={}, agentId={}, modelConfigId={}, error={}",
+                    resolved.session().getId(), resolved.agent().getId(), resolved.agent().getModelConfigId(),
+                    e.getMessage());
             callback.onError(e);
             throw e;
         }
@@ -235,6 +269,8 @@ public class ChatServiceImpl implements ChatService {
         session.setStatus(STATUS_ARCHIVED);
         session.setUpdatedAt(null);
         sessionMapper.updateById(session);
+        log.info("Chat session archived: sessionId={}, agentId={}, userId={}",
+                sessionId, session.getAgentId(), session.getUserId());
     }
 
     private ResolvedChat resolveChat(ChatSendRequest request) {
@@ -271,6 +307,9 @@ public class ChatServiceImpl implements ChatService {
         }
 
         ModelConfigDto model = providerService.getModelConfig(agent.getModelConfigId());
+        log.info("Chat resolved: sessionId={}, agentId={}, modelConfigId={}, model={}, newSession={}",
+                session.getId(), agent.getId(), agent.getModelConfigId(), model.getModelId(),
+                request.getSessionId() == null);
         return new ResolvedChat(session, agent, model);
     }
 
@@ -290,6 +329,8 @@ public class ChatServiceImpl implements ChatService {
             session.setTitle(generateTitle(content));
             session.setStatus(STATUS_ACTIVE);
             sessionMapper.insert(session);
+            log.info("Chat session created: sessionId={}, agentId={}, userId={}, titleLength={}",
+                    session.getId(), agentId, userId, lengthOf(session.getTitle()));
             return session;
         });
     }
@@ -330,14 +371,19 @@ public class ChatServiceImpl implements ChatService {
                 && Objects.equals(item.getContent(), currentUserContent))) {
             messages.add(toProviderMessage("user", currentUserContent));
         }
+        log.info("Chat provider messages built: sessionId={}, agentId={}, historyMessages={}, totalMessages={}, hasKnowledgeContext={}",
+                resolved.session().getId(), resolved.agent().getId(), history.size(), messages.size(),
+                StringUtils.hasText(knowledgeContext));
         return messages;
     }
 
     private String buildKnowledgeContext(Long agentId, String currentUserContent) {
         List<RetrievedChunkDto> chunks = knowledgeService.retrieveForAgent(agentId, currentUserContent);
         if (chunks.isEmpty()) {
+            log.info("Chat knowledge retrieval empty: agentId={}", agentId);
             return null;
         }
+        log.info("Chat knowledge retrieval hit: agentId={}, chunks={}", agentId, chunks.size());
         StringBuilder builder = new StringBuilder();
         builder.append("请优先根据以下公司知识库资料回答用户问题。")
                 .append("如果资料不足以确认答案，请明确说明无法从现有资料确认，不要编造公司政策。\n\n");
@@ -409,6 +455,10 @@ public class ChatServiceImpl implements ChatService {
             touchSession(sessionId);
             return po;
         });
+    }
+
+    private int lengthOf(String value) {
+        return value != null ? value.length() : 0;
     }
 
     private void touchSession(Long sessionId) {

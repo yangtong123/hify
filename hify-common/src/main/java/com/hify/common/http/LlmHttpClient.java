@@ -46,6 +46,8 @@ public class LlmHttpClient {
     public String post(String url, Map<String, String> headers, String body) {
         long start = System.currentTimeMillis();
         int status = 0;
+        log.info("LLM POST started: url={}, headers={}, bodyLength={}",
+                url, headers != null ? headers.size() : 0, body != null ? body.length() : 0);
         try {
             HttpHeaders httpHeaders = new HttpHeaders();
             if (headers != null) {
@@ -83,6 +85,9 @@ public class LlmHttpClient {
     public void stream(String url, Map<String, String> headers, String body, Consumer<String> callback) {
         long start = System.currentTimeMillis();
         int status = 0;
+        int lineCount = 0;
+        log.info("LLM STREAM started: url={}, headers={}, bodyLength={}",
+                url, headers != null ? headers.size() : 0, body != null ? body.length() : 0);
         try {
             Request.Builder requestBuilder = new Request.Builder().url(url);
             if (headers != null) {
@@ -120,22 +125,24 @@ public class LlmHttpClient {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     if (!line.isEmpty()) {
+                        lineCount++;
                         callback.accept(line);
                     }
                 }
             }
 
             long duration = System.currentTimeMillis() - start;
-            log.info("LLM STREAM {} -> {} ({}ms)", url, status, duration);
+            log.info("LLM STREAM {} -> {} ({}ms), lines={}", url, status, duration, lineCount);
         } catch (LlmApiException e) {
             throw e;
         } catch (RuntimeException e) {
             long duration = System.currentTimeMillis() - start;
-            log.warn("LLM STREAM {} interrupted by callback ({}ms): {}", url, duration, e.getMessage());
+            log.warn("LLM STREAM {} interrupted by callback ({}ms), lines={}: {}",
+                    url, duration, lineCount, e.getMessage());
             throw e;
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - start;
-            log.error("LLM STREAM {} -> {} ({}ms): {}", url, status, duration, e.getMessage());
+            log.error("LLM STREAM {} -> {} ({}ms), lines={}: {}", url, status, duration, lineCount, e.getMessage());
             throw mapException(e);
         }
     }
@@ -144,6 +151,9 @@ public class LlmHttpClient {
      * Simple GET with configurable timeout. Used for connectivity tests.
      */
     public String get(String url, Map<String, String> headers, long timeoutSeconds) {
+        long start = System.currentTimeMillis();
+        log.info("LLM GET started: url={}, headers={}, timeoutSeconds={}",
+                url, headers != null ? headers.size() : 0, timeoutSeconds);
         OkHttpClient client = new OkHttpClient.Builder()
                 .connectTimeout(Duration.ofSeconds(timeoutSeconds))
                 .readTimeout(Duration.ofSeconds(timeoutSeconds))
@@ -156,6 +166,8 @@ public class LlmHttpClient {
 
         try (Response response = client.newCall(builder.build()).execute()) {
             int status = response.code();
+            long duration = System.currentTimeMillis() - start;
+            log.info("LLM GET {} -> {} ({}ms)", url, status, duration);
             if (status == 401 || status == 403) {
                 throw new LlmApiException(ErrorType.AUTH_FAILED, status, "auth failed: " + status);
             }
@@ -167,6 +179,8 @@ public class LlmHttpClient {
         } catch (LlmApiException e) {
             throw e;
         } catch (Exception e) {
+            long duration = System.currentTimeMillis() - start;
+            log.error("LLM GET {} failed ({}ms): {}", url, duration, e.getMessage());
             throw mapException(e);
         }
     }

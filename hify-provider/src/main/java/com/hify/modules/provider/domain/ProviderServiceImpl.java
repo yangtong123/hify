@@ -217,6 +217,7 @@ public class ProviderServiceImpl implements ProviderService {
     @Transactional
     @CacheEvict(cacheNames = "provider-cache", allEntries = true)
     public ConnectionTestResult testConnection(Long id) {
+        log.info("Provider connection test started: id={}", id);
         ProviderPo provider = providerMapper.selectById(id);
         if (provider == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "提供商不存在");
@@ -224,11 +225,15 @@ public class ProviderServiceImpl implements ProviderService {
 
         var adapter = adapterFactory.getAdapter(provider.getType());
         ConnectionTestResult result = adapter.testConnection(provider);
+        log.info("Provider connection test result: id={}, name={}, type={}, success={}, latency={}ms",
+                provider.getId(), provider.getName(), provider.getType(), result.isSuccess(), result.getLatencyMs());
         if (result.isSuccess()) {
             List<String> modelIds = adapter.listModels(provider);
             if (modelIds != null) {
                 syncModelConfigs(provider.getId(), modelIds);
                 result.setModelCount(modelIds.size());
+                log.info("Provider models synced after connection test: id={}, models={}",
+                        provider.getId(), modelIds.size());
             }
         }
         return result;
@@ -268,23 +273,65 @@ public class ProviderServiceImpl implements ProviderService {
     @Override
     public ChatResponse chat(Long modelConfigId, ChatRequest request) {
         ChatInvocation invocation = buildChatInvocation(modelConfigId, request);
-        return adapterFactory.getAdapter(invocation.provider().getType())
-                .chat(invocation.provider(), invocation.request());
+        long start = System.currentTimeMillis();
+        log.info("Provider chat started: providerId={}, providerName={}, type={}, modelConfigId={}, model={}, messages={}",
+                invocation.provider().getId(), invocation.provider().getName(), invocation.provider().getType(),
+                modelConfigId, invocation.request().getModel(), countList(invocation.request().getMessages()));
+        try {
+            ChatResponse response = adapterFactory.getAdapter(invocation.provider().getType())
+                    .chat(invocation.provider(), invocation.request());
+            log.info("Provider chat completed: providerId={}, model={}, latency={}ms, finishReason={}, tokens={}",
+                    invocation.provider().getId(), response.getModel(), System.currentTimeMillis() - start,
+                    response.getFinishReason(), totalTokens(response));
+            return response;
+        } catch (RuntimeException e) {
+            log.warn("Provider chat failed: providerId={}, model={}, latency={}ms, error={}",
+                    invocation.provider().getId(), invocation.request().getModel(),
+                    System.currentTimeMillis() - start, e.getMessage());
+            throw e;
+        }
     }
 
     @Override
     public void streamChat(Long modelConfigId, ChatRequest request, Consumer<ChatResponse> chunkConsumer) {
         ChatInvocation invocation = buildChatInvocation(modelConfigId, request);
-        adapterFactory.getAdapter(invocation.provider().getType())
-                .streamChat(invocation.provider(), invocation.request(), chunkConsumer);
+        long start = System.currentTimeMillis();
+        log.info("Provider stream chat started: providerId={}, providerName={}, type={}, modelConfigId={}, model={}, messages={}",
+                invocation.provider().getId(), invocation.provider().getName(), invocation.provider().getType(),
+                modelConfigId, invocation.request().getModel(), countList(invocation.request().getMessages()));
+        try {
+            adapterFactory.getAdapter(invocation.provider().getType())
+                    .streamChat(invocation.provider(), invocation.request(), chunkConsumer);
+            log.info("Provider stream chat completed: providerId={}, model={}, latency={}ms",
+                    invocation.provider().getId(), invocation.request().getModel(), System.currentTimeMillis() - start);
+        } catch (RuntimeException e) {
+            log.warn("Provider stream chat failed: providerId={}, model={}, latency={}ms, error={}",
+                    invocation.provider().getId(), invocation.request().getModel(),
+                    System.currentTimeMillis() - start, e.getMessage());
+            throw e;
+        }
     }
 
     @Override
     public EmbeddingResponse embed(Long modelConfigId, EmbeddingRequest request) {
         ChatInvocation invocation = buildChatInvocation(modelConfigId, toChatCompatibleRequest(request));
         request.setModel(invocation.request().getModel());
-        return adapterFactory.getAdapter(invocation.provider().getType())
-                .embed(invocation.provider(), request);
+        long start = System.currentTimeMillis();
+        log.info("Provider embedding started: providerId={}, providerName={}, type={}, modelConfigId={}, model={}, inputs={}",
+                invocation.provider().getId(), invocation.provider().getName(), invocation.provider().getType(),
+                modelConfigId, request.getModel(), countList(request.getInputs()));
+        try {
+            EmbeddingResponse response = adapterFactory.getAdapter(invocation.provider().getType())
+                    .embed(invocation.provider(), request);
+            log.info("Provider embedding completed: providerId={}, model={}, latency={}ms, embeddings={}",
+                    invocation.provider().getId(), request.getModel(), System.currentTimeMillis() - start,
+                    countList(response.getEmbeddings()));
+            return response;
+        } catch (RuntimeException e) {
+            log.warn("Provider embedding failed: providerId={}, model={}, latency={}ms, error={}",
+                    invocation.provider().getId(), request.getModel(), System.currentTimeMillis() - start, e.getMessage());
+            throw e;
+        }
     }
 
     private ChatRequest toChatCompatibleRequest(EmbeddingRequest request) {
@@ -314,6 +361,7 @@ public class ProviderServiceImpl implements ProviderService {
         if (modelIds == null || modelIds.isEmpty()) {
             return;
         }
+        log.info("Provider model sync started: providerId={}, remoteModels={}", providerId, modelIds.size());
 
         List<ModelConfigPo> existingModels = modelConfigMapper.selectList(
                 new LambdaQueryWrapper<ModelConfigPo>()
@@ -326,6 +374,7 @@ public class ProviderServiceImpl implements ProviderService {
             existingByModelId.put(model.getModelId(), model);
         }
 
+        int createdCount = 0;
         for (String modelId : modelIds.stream().filter(this::hasText).distinct().toList()) {
             if (existingByModelId.containsKey(modelId)) {
                 continue;
@@ -338,7 +387,10 @@ public class ProviderServiceImpl implements ProviderService {
             model.setContextSize(inferContextSize(modelId));
             model.setEnabled(1);
             modelConfigMapper.insert(model);
+            createdCount++;
         }
+        log.info("Provider model sync completed: providerId={}, remoteModels={}, existingModels={}, createdModels={}",
+                providerId, modelIds.size(), existingModels.size(), createdCount);
     }
 
     private boolean hasText(String value) {
@@ -471,6 +523,14 @@ public class ProviderServiceImpl implements ProviderService {
         }
         request.setModel(model.getModelId());
         return new ChatInvocation(provider, request);
+    }
+
+    private int countList(List<?> list) {
+        return list != null ? list.size() : 0;
+    }
+
+    private Integer totalTokens(ChatResponse response) {
+        return response.getUsage() != null ? response.getUsage().getTotalTokens() : null;
     }
 
     private record ChatInvocation(ProviderPo provider, ChatRequest request) {

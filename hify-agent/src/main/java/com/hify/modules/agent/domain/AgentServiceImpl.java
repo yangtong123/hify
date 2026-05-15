@@ -63,6 +63,8 @@ public class AgentServiceImpl implements AgentService {
     @Override
     @Transactional
     public AgentDetailResponse create(AgentCreateRequest request) {
+        log.info("Agent create started: name={}, modelConfigId={}, enabled={}",
+                request.getName(), request.getModelConfigId(), request.getEnabled());
         checkNameDuplicate(request.getName(), null);
         validateModelEnabled(request.getModelConfigId());
         List<Long> mcpServerIds = validateMcpServers(request.getMcpServerIds());
@@ -72,12 +74,17 @@ public class AgentServiceImpl implements AgentService {
         replaceTools(po.getId(), mcpServerIds);
         replaceKnowledgeBases(po.getId(), request.getKnowledgeBaseIds());
 
+        log.info("Agent created: id={}, name={}, modelConfigId={}, mcpServers={}, knowledgeBases={}",
+                po.getId(), po.getName(), po.getModelConfigId(), mcpServerIds.size(),
+                countList(request.getKnowledgeBaseIds()));
         return buildDetail(po);
     }
 
     @Override
     @Transactional
     public AgentDetailResponse update(Long id, AgentUpdateRequest request) {
+        log.info("Agent update started: id={}, name={}, modelConfigId={}, enabled={}",
+                id, request.getName(), request.getModelConfigId(), request.getEnabled());
         AgentPo po = agentMapper.selectById(id);
         if (po == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "Agent 不存在");
@@ -103,12 +110,16 @@ public class AgentServiceImpl implements AgentService {
         replaceTools(id, mcpServerIds);
         replaceKnowledgeBases(id, request.getKnowledgeBaseIds());
 
+        log.info("Agent updated: id={}, name={}, modelConfigId={}, enabled={}, mcpServers={}, knowledgeBases={}",
+                id, po.getName(), po.getModelConfigId(), po.getEnabled(), mcpServerIds.size(),
+                countList(request.getKnowledgeBaseIds()));
         return buildDetail(po);
     }
 
     @Override
     @Transactional
     public void delete(Long id) {
+        log.info("Agent delete started: id={}", id);
         AgentPo po = agentMapper.selectById(id);
         if (po == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "Agent 不存在");
@@ -116,6 +127,7 @@ public class AgentServiceImpl implements AgentService {
         agentMapper.deleteById(id);
         deleteTools(id);
         replaceKnowledgeBases(id, List.of());
+        log.info("Agent deleted: id={}, name={}", id, po.getName());
     }
 
     @Override
@@ -144,11 +156,15 @@ public class AgentServiceImpl implements AgentService {
     @Override
     @Transactional
     public void updateTools(Long agentId, AgentToolsRequest request) {
+        log.info("Agent tools update started: agentId={}, requestedServers={}",
+                agentId, countList(request.getMcpServerIds()));
         AgentPo po = agentMapper.selectById(agentId);
         if (po == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "Agent 不存在");
         }
-        replaceTools(agentId, validateMcpServers(request.getMcpServerIds()));
+        List<Long> mcpServerIds = validateMcpServers(request.getMcpServerIds());
+        replaceTools(agentId, mcpServerIds);
+        log.info("Agent tools updated: agentId={}, servers={}", agentId, mcpServerIds.size());
     }
 
     // ---- private helpers ----
@@ -336,6 +352,7 @@ public class AgentServiceImpl implements AgentService {
             mapping.setMcpServerId(mcpServerId);
             agentMcpMapper.insert(mapping);
         }
+        log.info("Agent MCP mappings replaced: agentId={}, servers={}", agentId, mcpServerIds.size());
     }
 
     private void deleteTools(Long agentId) {
@@ -351,6 +368,10 @@ public class AgentServiceImpl implements AgentService {
 
     private <T> T defaultIfNull(T value, T defaultValue) {
         return value != null ? value : defaultValue;
+    }
+
+    private int countList(List<?> list) {
+        return list != null ? list.size() : 0;
     }
 
     private AgentConfig toConfig(AgentConfigDto dto) {

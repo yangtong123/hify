@@ -98,32 +98,42 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     @Override
     @Transactional
     public KnowledgeBaseResponse create(KnowledgeBaseCreateRequest request) {
+        log.info("Knowledge base create started: name={}, embeddingModelConfigId={}, dimension={}",
+                request.getName(), request.getEmbeddingModelConfigId(), request.getEmbeddingDimension());
         checkNameDuplicate(request.getName(), null);
         validateEmbeddingModel(request.getEmbeddingModelConfigId());
 
         KnowledgeBasePo po = new KnowledgeBasePo();
         applyRequest(po, request);
         knowledgeBaseMapper.insert(po);
+        log.info("Knowledge base created: id={}, name={}, embeddingModelConfigId={}, chunkSize={}, chunkOverlap={}, topK={}",
+                po.getId(), po.getName(), po.getEmbeddingModelConfigId(), po.getChunkSize(),
+                po.getChunkOverlap(), po.getTopK());
         return toResponse(po, null);
     }
 
     @Override
     @Transactional
     public KnowledgeBaseResponse update(Long id, KnowledgeBaseUpdateRequest request) {
+        log.info("Knowledge base update started: id={}, name={}, embeddingModelConfigId={}, dimension={}",
+                id, request.getName(), request.getEmbeddingModelConfigId(), request.getEmbeddingDimension());
         KnowledgeBasePo po = requireKnowledgeBase(id);
         checkNameDuplicate(request.getName(), id);
         validateEmbeddingModel(request.getEmbeddingModelConfigId());
         applyRequest(po, request);
         po.setUpdatedAt(null);
         knowledgeBaseMapper.updateById(po);
+        log.info("Knowledge base updated: id={}, name={}, status={}, chunkSize={}, chunkOverlap={}, topK={}",
+                po.getId(), po.getName(), po.getStatus(), po.getChunkSize(), po.getChunkOverlap(), po.getTopK());
         return toResponse(po, null);
     }
 
     @Override
     @Transactional
     public void delete(Long id) {
-        requireKnowledgeBase(id);
+        KnowledgeBasePo po = requireKnowledgeBase(id);
         knowledgeBaseMapper.deleteById(id);
+        log.info("Knowledge base deleted: id={}, name={}", id, po.getName());
     }
 
     @Override
@@ -149,6 +159,9 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     @Override
     @Transactional
     public KnowledgeDocumentResponse uploadDocument(Long knowledgeBaseId, MultipartFile file) {
+        log.info("Knowledge document upload started: knowledgeBaseId={}, fileName={}, size={}",
+                knowledgeBaseId, file != null ? file.getOriginalFilename() : null,
+                file != null ? file.getSize() : null);
         KnowledgeBasePo knowledgeBase = requireActiveKnowledgeBase(knowledgeBaseId);
         if (file == null || file.isEmpty()) {
             throw new BizException(ErrorCode.PARAM_ERROR, "上传文件不能为空");
@@ -165,6 +178,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                 .eq(KnowledgeDocumentPo::getKnowledgeBaseId, knowledgeBaseId)
                 .eq(KnowledgeDocumentPo::getContentHash, contentHash));
         if (existing != null) {
+            log.info("Knowledge document upload deduplicated: knowledgeBaseId={}, documentId={}, fileName={}",
+                    knowledgeBaseId, existing.getId(), fileName);
             return toDocumentResponse(existing);
         }
 
@@ -181,6 +196,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         document.setChunkCount(0);
         documentMapper.insert(document);
 
+        log.info("Knowledge document uploaded: documentId={}, knowledgeBaseId={}, fileName={}, fileType={}, size={}",
+                document.getId(), knowledgeBaseId, fileName, document.getFileType(), document.getFileSize());
         scheduleProcessDocument(knowledgeBase, document, bytes);
         return toDocumentResponse(document);
     }
@@ -205,6 +222,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         }
         documentMapper.deleteById(documentId);
         vectorRepository.deleteDocumentChunks(documentId);
+        log.info("Knowledge document deleted: documentId={}, knowledgeBaseId={}, fileName={}",
+                documentId, document.getKnowledgeBaseId(), document.getFileName());
     }
 
     @Override
@@ -213,6 +232,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         List<Long> knowledgeBaseIds = request != null && request.getKnowledgeBaseIds() != null
                 ? request.getKnowledgeBaseIds()
                 : List.of();
+        log.info("Agent knowledge base update started: agentId={}, requestedKnowledgeBases={}",
+                agentId, knowledgeBaseIds.size());
         List<Long> distinctIds = knowledgeBaseIds.stream()
                 .filter(Objects::nonNull)
                 .distinct()
@@ -235,6 +256,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             agentKnowledgeBaseMapper.insert(mapping);
             priority += 100;
         }
+        log.info("Agent knowledge base updated: agentId={}, knowledgeBases={}", agentId, distinctIds.size());
     }
 
     @Override
@@ -259,11 +281,14 @@ public class KnowledgeServiceImpl implements KnowledgeService {
 
     @Override
     public List<RetrievedChunkDto> retrieveForAgent(Long agentId, String query) {
+        long start = System.currentTimeMillis();
         if (!StringUtils.hasText(query)) {
+            log.info("Knowledge retrieval skipped: agentId={}, reason=empty_query", agentId);
             return List.of();
         }
         List<KnowledgeBasePo> knowledgeBases = listAgentKnowledgeBasePos(agentId);
         if (knowledgeBases.isEmpty()) {
+            log.info("Knowledge retrieval skipped: agentId={}, reason=no_active_knowledge_base", agentId);
             return List.of();
         }
 
@@ -280,7 +305,10 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         List<Double> queryEmbedding = embed(embeddingModelConfigId, List.of(query), embeddingDimension).get(0);
         List<Long> knowledgeBaseIds = knowledgeBases.stream().map(KnowledgeBasePo::getId).toList();
         List<KnowledgeChunkRecord> records = vectorRepository.search(knowledgeBaseIds, queryEmbedding, topK, threshold);
-        return enrichRetrievedChunks(records);
+        List<RetrievedChunkDto> chunks = enrichRetrievedChunks(records);
+        log.info("Knowledge retrieval completed: agentId={}, knowledgeBases={}, topK={}, threshold={}, hits={}, latency={}ms",
+                agentId, knowledgeBaseIds.size(), topK, threshold, chunks.size(), System.currentTimeMillis() - start);
+        return chunks;
     }
 
     private void scheduleProcessDocument(KnowledgeBasePo knowledgeBase, KnowledgeDocumentPo document, byte[] bytes) {
@@ -289,10 +317,14 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
+                    log.info("Knowledge document async processing scheduled after commit: documentId={}, knowledgeBaseId={}",
+                            document.getId(), knowledgeBase.getId());
                     asyncExecutor.execute(task);
                 }
             });
         } else {
+            log.info("Knowledge document async processing scheduled: documentId={}, knowledgeBaseId={}",
+                    document.getId(), knowledgeBase.getId());
             asyncExecutor.execute(task);
         }
     }
@@ -312,6 +344,9 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             if (chunks.isEmpty()) {
                 throw new BizException(ErrorCode.PARAM_ERROR, "文档未生成有效分块");
             }
+            log.info("Knowledge document chunked: documentId={}, knowledgeBaseId={}, chunks={}, chunkSize={}, chunkOverlap={}",
+                    document.getId(), knowledgeBase.getId(), chunks.size(), knowledgeBase.getChunkSize(),
+                    knowledgeBase.getChunkOverlap());
 
             updateDocumentStatus(document, STATUS_EMBEDDING, null, null);
             List<List<Double>> embeddings = embed(knowledgeBase.getEmbeddingModelConfigId(), chunks, knowledgeBase.getEmbeddingDimension());
@@ -338,11 +373,16 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                     document.getId(), knowledgeBase.getId(), records.size());
         } catch (RuntimeException e) {
             updateDocumentStatus(document, STATUS_FAILED, 0, e.getMessage());
+            log.warn("Knowledge document processing failed: documentId={}, knowledgeBaseId={}, error={}",
+                    document.getId(), knowledgeBase.getId(), e.getMessage());
             throw e;
         }
     }
 
     private List<List<Double>> embed(Long modelConfigId, List<String> inputs, int expectedDimension) {
+        long start = System.currentTimeMillis();
+        log.info("Knowledge embedding started: modelConfigId={}, inputs={}, expectedDimension={}",
+                modelConfigId, inputs != null ? inputs.size() : 0, expectedDimension);
         EmbeddingRequest request = new EmbeddingRequest();
         request.setInputs(inputs);
         EmbeddingResponse response = providerService.embed(modelConfigId, request);
@@ -355,6 +395,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                 throw new BizException(ErrorCode.PARAM_ERROR, "Embedding 维度与知识库配置不一致");
             }
         }
+        log.info("Knowledge embedding completed: modelConfigId={}, inputs={}, embeddings={}, latency={}ms",
+                modelConfigId, inputs.size(), embeddings.size(), System.currentTimeMillis() - start);
         return embeddings;
     }
 
@@ -423,6 +465,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         document.setProcessStatus(status);
         document.setChunkCount(chunkCount);
         document.setErrorMessage(errorMessage);
+        log.info("Knowledge document status updated: documentId={}, status={}, chunkCount={}, hasError={}",
+                document.getId(), status, chunkCount, StringUtils.hasText(errorMessage));
     }
 
     private void applyRequest(KnowledgeBasePo po, KnowledgeBaseCreateRequest request) {
