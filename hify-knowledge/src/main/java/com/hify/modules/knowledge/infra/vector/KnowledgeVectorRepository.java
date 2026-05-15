@@ -120,6 +120,21 @@ public class KnowledgeVectorRepository {
                 .toList();
     }
 
+    public List<KnowledgeChunkRecord> listDocumentChunks(Long documentId) {
+        return jdbcTemplate.query("""
+                        SELECT id, knowledge_base_id, document_id, chunk_index, content, token_count, char_count,
+                               page_number, section_title, embedding_model_config_id, embedding_model, content_hash,
+                               NULL::DOUBLE PRECISION AS distance, created_at
+                        FROM knowledge_chunk
+                        WHERE document_id = ?
+                          AND enabled = TRUE
+                          AND deleted = FALSE
+                        ORDER BY chunk_index ASC
+                        """,
+                this::mapRecord,
+                documentId);
+    }
+
     public void deleteDocumentChunks(Long documentId) {
         jdbcTemplate.update("UPDATE knowledge_chunk SET deleted = TRUE, updated_at = CURRENT_TIMESTAMP WHERE document_id = ?", documentId);
     }
@@ -139,7 +154,8 @@ public class KnowledgeVectorRepository {
         record.setEmbeddingModelConfigId(rs.getLong("embedding_model_config_id"));
         record.setEmbeddingModel(rs.getString("embedding_model"));
         record.setContentHash(rs.getString("content_hash"));
-        record.setDistance(rs.getDouble("distance"));
+        double distance = rs.getDouble("distance");
+        record.setDistance(rs.wasNull() ? null : distance);
         record.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
         return record;
     }

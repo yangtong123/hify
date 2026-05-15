@@ -37,6 +37,7 @@
         <springdoc.version>2.7.0</springdoc.version>
         <mysql-connector.version>8.0.33</mysql-connector.version>
         <postgresql.version>42.7.5</postgresql.version>
+        <pdfbox.version>3.0.3</pdfbox.version>
     </properties>
 
     <dependencyManagement>
@@ -137,6 +138,11 @@
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
                 <version>${postgresql.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>pdfbox</artifactId>
+                <version>${pdfbox.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

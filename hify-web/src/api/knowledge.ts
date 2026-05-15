@@ -58,6 +58,11 @@ export interface RetrievedChunkDto {
   similarity: number
 }
 
+export async function getKnowledgeBase(id: number): Promise<KnowledgeBaseResponse> {
+  const res: any = await http.get(`/knowledge-bases/${id}`)
+  return res.data
+}
+
 export async function getKnowledgeBaseList(params: {
   name?: string
   status?: string
@@ -92,6 +97,11 @@ export async function listKnowledgeDocuments(knowledgeBaseId: number): Promise<K
   return res.data
 }
 
+export async function getKnowledgeDocument(documentId: number): Promise<KnowledgeDocumentResponse> {
+  const res: any = await http.get(`/documents/${documentId}`)
+  return res.data
+}
+
 export async function uploadKnowledgeDocument(knowledgeBaseId: number, file: File): Promise<KnowledgeDocumentResponse> {
   const form = new FormData()
   form.append('file', file)
@@ -103,5 +113,10 @@ export async function uploadKnowledgeDocument(knowledgeBaseId: number, file: Fil
 }
 
 export function deleteKnowledgeDocument(documentId: number): Promise<void> {
-  return http.delete(`/knowledge-bases/documents/${documentId}`)
+  return http.delete(`/documents/${documentId}`)
+}
+
+export async function listKnowledgeDocumentChunks(documentId: number): Promise<RetrievedChunkDto[]> {
+  const res: any = await http.get(`/documents/${documentId}/chunks`)
+  return res.data
 }

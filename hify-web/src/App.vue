@@ -19,6 +19,11 @@ const breadcrumbs = computed(() => {
   const items: { label: string; path?: string }[] = [
     { label: '首页', path: '/' },
   ]
+  if (route.name === 'knowledge-documents') {
+    items.push({ label: '知识库管理', path: '/knowledge' })
+    items.push({ label: '文档管理' })
+    return items
+  }
   const current = menuItems.find((m) => m.path === route.path)
   if (current) {
     items.push({ label: current.label })

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Edit, UploadFilled } from '@element-plus/icons-vue'
+import { Delete, Edit, FolderOpened, UploadFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { getAvailableModels, type ModelConfigDto } from '@/api/provider'
 import {
@@ -17,6 +18,7 @@ import {
   type KnowledgeDocumentResponse,
 } from '@/api/knowledge'
 
+const router = useRouter()
 const loading = ref(false)
 const bases = ref<KnowledgeBaseResponse[]>([])
 const total = ref(0)
@@ -98,6 +100,10 @@ function openEdit(row: KnowledgeBaseResponse) {
     status: row.status,
   })
   dialogVisible.value = true
+}
+
+function openDocuments(row: KnowledgeBaseResponse) {
+  router.push(`/knowledge-bases/${row.id}/documents`)
 }
 
 async function submitBase() {
@@ -283,8 +289,9 @@ onUnmounted(() => {
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="130" fixed="right">
+        <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
+            <el-button link :icon="FolderOpened" @click.stop="openDocuments(row)">文档</el-button>
             <el-button link :icon="Edit" @click.stop="openEdit(row)">编辑</el-button>
             <el-button link type="danger" :icon="Delete" @click.stop="removeBase(row)">删除</el-button>
           </template>

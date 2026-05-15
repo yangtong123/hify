@@ -28,6 +28,10 @@ public interface KnowledgeService {
 
     List<KnowledgeDocumentResponse> listDocuments(Long knowledgeBaseId);
 
+    KnowledgeDocumentResponse getDocument(Long documentId);
+
+    List<RetrievedChunkDto> listDocumentChunks(Long documentId);
+
     void deleteDocument(Long documentId);
 
     void updateAgentKnowledgeBases(Long agentId, AgentKnowledgeBaseRequest request);

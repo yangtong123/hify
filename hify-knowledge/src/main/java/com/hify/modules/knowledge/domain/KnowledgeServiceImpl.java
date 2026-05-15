@@ -28,6 +28,9 @@ import com.hify.modules.provider.api.dto.EmbeddingRequest;
 import com.hify.modules.provider.api.dto.EmbeddingResponse;
 import com.hify.modules.provider.api.dto.ModelConfigDto;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -69,7 +72,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     private static final int DEFAULT_CHUNK_OVERLAP = 150;
     private static final int DEFAULT_TOP_K = 5;
     private static final BigDecimal DEFAULT_SIMILARITY_THRESHOLD = new BigDecimal("0.7000");
-    private static final Set<String> SUPPORTED_TEXT_TYPES = Set.of("txt", "md", "markdown", "html", "htm", "csv", "json");
+    private static final String FILE_TYPE_PDF = "pdf";
+    private static final Set<String> SUPPORTED_DOCUMENT_TYPES = Set.of("txt", "md", "markdown", FILE_TYPE_PDF);
 
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final KnowledgeDocumentMapper documentMapper;
@@ -168,8 +172,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         }
         String fileName = Objects.requireNonNullElse(file.getOriginalFilename(), "document.txt");
         String fileType = getFileType(fileName);
-        if (!SUPPORTED_TEXT_TYPES.contains(fileType)) {
-            throw new BizException(ErrorCode.PARAM_ERROR, "当前仅支持 UTF-8 文本文档: txt/md/html/csv/json");
+        if (!SUPPORTED_DOCUMENT_TYPES.contains(fileType)) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "当前仅支持 txt/md/pdf 文档");
         }
 
         byte[] bytes = readBytes(file);
@@ -214,12 +218,22 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     }
 
     @Override
+    public KnowledgeDocumentResponse getDocument(Long documentId) {
+        return toDocumentResponse(requireDocument(documentId));
+    }
+
+    @Override
+    public List<RetrievedChunkDto> listDocumentChunks(Long documentId) {
+        KnowledgeDocumentPo document = requireDocument(documentId);
+        return vectorRepository.listDocumentChunks(documentId).stream()
+                .map(record -> toRetrievedChunkDto(record, document))
+                .toList();
+    }
+
+    @Override
     @Transactional
     public void deleteDocument(Long documentId) {
-        KnowledgeDocumentPo document = documentMapper.selectById(documentId);
-        if (document == null) {
-            throw new BizException(ErrorCode.NOT_FOUND, "文档不存在");
-        }
+        KnowledgeDocumentPo document = requireDocument(documentId);
         documentMapper.deleteById(documentId);
         vectorRepository.deleteDocumentChunks(documentId);
         log.info("Knowledge document deleted: documentId={}, knowledgeBaseId={}, fileName={}",
@@ -334,7 +348,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             log.info("Knowledge document processing started: documentId={}, knowledgeBaseId={}",
                     document.getId(), knowledgeBase.getId());
             updateDocumentStatus(document, STATUS_PARSING, null, null);
-            String text = new String(bytes, StandardCharsets.UTF_8);
+            String text = extractDocumentText(document, bytes);
             if (!StringUtils.hasText(text)) {
                 throw new BizException(ErrorCode.PARAM_ERROR, "文档内容为空");
             }
@@ -410,24 +424,28 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         List<RetrievedChunkDto> chunks = new ArrayList<>();
         for (KnowledgeChunkRecord record : records) {
             KnowledgeDocumentPo document = documentMap.get(record.getDocumentId());
-            RetrievedChunkDto dto = new RetrievedChunkDto();
-            dto.setChunkId(record.getId());
-            dto.setKnowledgeBaseId(record.getKnowledgeBaseId());
-            dto.setDocumentId(record.getDocumentId());
-            dto.setChunkIndex(record.getChunkIndex());
-            dto.setContent(record.getContent());
-            dto.setTokenCount(record.getTokenCount());
-            dto.setPageNumber(record.getPageNumber());
-            dto.setSectionTitle(record.getSectionTitle());
-            dto.setDistance(record.getDistance());
-            dto.setSimilarity(1.0D - record.getDistance());
-            if (document != null) {
-                dto.setDocumentTitle(document.getTitle());
-                dto.setFileName(document.getFileName());
-            }
-            chunks.add(dto);
+            chunks.add(toRetrievedChunkDto(record, document));
         }
         return chunks;
+    }
+
+    private RetrievedChunkDto toRetrievedChunkDto(KnowledgeChunkRecord record, KnowledgeDocumentPo document) {
+        RetrievedChunkDto dto = new RetrievedChunkDto();
+        dto.setChunkId(record.getId());
+        dto.setKnowledgeBaseId(record.getKnowledgeBaseId());
+        dto.setDocumentId(record.getDocumentId());
+        dto.setChunkIndex(record.getChunkIndex());
+        dto.setContent(record.getContent());
+        dto.setTokenCount(record.getTokenCount());
+        dto.setPageNumber(record.getPageNumber());
+        dto.setSectionTitle(record.getSectionTitle());
+        dto.setDistance(record.getDistance());
+        dto.setSimilarity(record.getDistance() != null ? 1.0D - record.getDistance() : null);
+        if (document != null) {
+            dto.setDocumentTitle(document.getTitle());
+            dto.setFileName(document.getFileName());
+        }
+        return dto;
     }
 
     private List<KnowledgeBasePo> listAgentKnowledgeBasePos(Long agentId) {
@@ -506,6 +524,14 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         KnowledgeBasePo po = knowledgeBaseMapper.selectById(id);
         if (po == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "知识库不存在");
+        }
+        return po;
+    }
+
+    private KnowledgeDocumentPo requireDocument(Long id) {
+        KnowledgeDocumentPo po = documentMapper.selectById(id);
+        if (po == null) {
+            throw new BizException(ErrorCode.NOT_FOUND, "文档不存在");
         }
         return po;
     }
@@ -633,6 +659,17 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         } catch (IOException e) {
             throw new BizException(ErrorCode.BAD_REQUEST, "读取上传文件失败: " + e.getMessage());
         }
+    }
+
+    private String extractDocumentText(KnowledgeDocumentPo document, byte[] bytes) {
+        if (FILE_TYPE_PDF.equalsIgnoreCase(document.getFileType())) {
+            try (PDDocument pdf = Loader.loadPDF(bytes)) {
+                return new PDFTextStripper().getText(pdf);
+            } catch (IOException e) {
+                throw new BizException(ErrorCode.BAD_REQUEST, "解析 PDF 文档失败: " + e.getMessage());
+            }
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     private String getFileType(String fileName) {
