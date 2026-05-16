@@ -217,7 +217,58 @@ CREATE INDEX idx_agent_knowledge_base_agent ON t_agent_knowledge_base(agent_id, 
 CREATE INDEX idx_agent_knowledge_base_kb ON t_agent_knowledge_base(knowledge_base_id, deleted);
 
 -- ----------------------------
--- 12. Demo 演示
+-- 12. 工作流
+-- ----------------------------
+CREATE TABLE t_workflow (
+    id              BIGINT          NOT NULL AUTO_INCREMENT,
+    name            VARCHAR(128)    NOT NULL,
+    description     VARCHAR(512)    NOT NULL DEFAULT '',
+    status          VARCHAR(32)     NOT NULL DEFAULT 'draft',
+    version         INT             NOT NULL DEFAULT 1,
+    start_node_id   VARCHAR(64)     NOT NULL,
+    config_json     CLOB,
+    created_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted         INTEGER         NOT NULL DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_workflow_status_deleted ON t_workflow(status, deleted, created_at);
+CREATE INDEX idx_workflow_created ON t_workflow(deleted, created_at);
+
+CREATE TABLE t_workflow_node (
+    id              BIGINT          NOT NULL AUTO_INCREMENT,
+    workflow_id     BIGINT          NOT NULL,
+    node_id         VARCHAR(64)     NOT NULL,
+    node_type       VARCHAR(32)     NOT NULL,
+    name            VARCHAR(128)    NOT NULL,
+    config_json     CLOB,
+    position_json   CLOB,
+    created_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted         INTEGER         NOT NULL DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_workflow_node ON t_workflow_node(workflow_id, deleted);
+CREATE INDEX idx_workflow_node_type ON t_workflow_node(workflow_id, node_type, deleted);
+
+CREATE TABLE t_workflow_edge (
+    id                   BIGINT          NOT NULL AUTO_INCREMENT,
+    workflow_id          BIGINT          NOT NULL,
+    source_node_id       VARCHAR(64)     NOT NULL,
+    target_node_id       VARCHAR(64)     NOT NULL,
+    edge_type            VARCHAR(32)     NOT NULL DEFAULT 'normal',
+    condition_expression VARCHAR(1024),
+    priority             INT             NOT NULL DEFAULT 0,
+    created_at           TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted              INTEGER         NOT NULL DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_workflow_edge_source ON t_workflow_edge(workflow_id, source_node_id, deleted, priority);
+CREATE INDEX idx_workflow_edge_target ON t_workflow_edge(workflow_id, target_node_id, deleted);
+
+-- ----------------------------
+-- 13. Demo 演示
 -- ----------------------------
 CREATE TABLE t_demo_item (
     id              BIGINT          NOT NULL AUTO_INCREMENT,

@@ -212,7 +212,58 @@ CREATE TABLE t_agent_knowledge_base (
 -- CREATE TABLE knowledge_chunk (... embedding vector(1024) ...);
 
 -- ----------------------------
--- 12. Demo 演示
+-- 12. 工作流
+-- ----------------------------
+CREATE TABLE t_workflow (
+    id              BIGINT          NOT NULL AUTO_INCREMENT,
+    name            VARCHAR(128)    NOT NULL COMMENT '工作流名称',
+    description     VARCHAR(512)    NOT NULL DEFAULT '' COMMENT '工作流描述',
+    status          VARCHAR(32)     NOT NULL DEFAULT 'draft' COMMENT 'draft/published/disabled',
+    version         INT             NOT NULL DEFAULT 1 COMMENT '版本号',
+    start_node_id   VARCHAR(64)     NOT NULL COMMENT '开始节点业务 ID',
+    config_json     JSON            COMMENT '全局配置',
+    created_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted         TINYINT(1)      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    INDEX idx_workflow_status_deleted (status, deleted, created_at),
+    INDEX idx_workflow_created (deleted, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流定义';
+
+CREATE TABLE t_workflow_node (
+    id              BIGINT          NOT NULL AUTO_INCREMENT,
+    workflow_id     BIGINT          NOT NULL COMMENT '工作流 ID',
+    node_id         VARCHAR(64)     NOT NULL COMMENT '节点业务 ID',
+    node_type       VARCHAR(32)     NOT NULL COMMENT 'start/llm/condition/tool/end',
+    name            VARCHAR(128)    NOT NULL COMMENT '节点名称',
+    config_json     JSON            COMMENT '节点类型专属配置',
+    position_json   JSON            COMMENT '前端画布位置',
+    created_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted         TINYINT(1)      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    INDEX idx_workflow_node (workflow_id, deleted),
+    INDEX idx_workflow_node_type (workflow_id, node_type, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流节点';
+
+CREATE TABLE t_workflow_edge (
+    id                   BIGINT          NOT NULL AUTO_INCREMENT,
+    workflow_id          BIGINT          NOT NULL COMMENT '工作流 ID',
+    source_node_id       VARCHAR(64)     NOT NULL COMMENT '起点节点业务 ID',
+    target_node_id       VARCHAR(64)     NOT NULL COMMENT '终点节点业务 ID',
+    edge_type            VARCHAR(32)     NOT NULL DEFAULT 'normal' COMMENT 'normal/condition/error',
+    condition_expression VARCHAR(1024)   COMMENT '条件表达式',
+    priority             INT             NOT NULL DEFAULT 0 COMMENT '匹配顺序，越小越优先',
+    created_at           DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at           DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted              TINYINT(1)      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    INDEX idx_workflow_edge_source (workflow_id, source_node_id, deleted, priority),
+    INDEX idx_workflow_edge_target (workflow_id, target_node_id, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流节点连接';
+
+-- ----------------------------
+-- 13. Demo 演示
 -- ----------------------------
 CREATE TABLE t_demo_item (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
