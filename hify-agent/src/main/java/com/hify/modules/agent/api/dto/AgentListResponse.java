@@ -13,6 +13,7 @@ public class AgentListResponse {
     private String description;
     private String systemPrompt;
     private Long modelConfigId;
+    private Long workflowId;
     private String modelName;
     private String providerName;
     private BigDecimal temperature;

@@ -55,6 +55,7 @@ CREATE TABLE t_agent (
     description     VARCHAR(500)    NOT NULL DEFAULT '',
     system_prompt   CLOB,
     model_config_id BIGINT          NOT NULL,
+    workflow_id     BIGINT          DEFAULT NULL,
     temperature     DECIMAL(3,2)    NOT NULL DEFAULT 0.70,
     max_tokens      INT             NOT NULL DEFAULT 4096,
     top_p           DECIMAL(3,2)    NOT NULL DEFAULT 1.00,
@@ -68,6 +69,7 @@ CREATE TABLE t_agent (
 );
 CREATE UNIQUE INDEX uk_agent_name_deleted ON t_agent(name, deleted);
 CREATE INDEX idx_agent_model_deleted ON t_agent(model_config_id, deleted);
+CREATE INDEX idx_agent_workflow_deleted ON t_agent(workflow_id, deleted);
 
 -- ----------------------------
 -- 5. Agent 与 MCP Server 关联
@@ -266,6 +268,48 @@ CREATE TABLE t_workflow_edge (
 );
 CREATE INDEX idx_workflow_edge_source ON t_workflow_edge(workflow_id, source_node_id, deleted, priority);
 CREATE INDEX idx_workflow_edge_target ON t_workflow_edge(workflow_id, target_node_id, deleted);
+
+CREATE TABLE t_workflow_run (
+    id               BIGINT          NOT NULL AUTO_INCREMENT,
+    workflow_id      BIGINT          NOT NULL,
+    workflow_version INT             NOT NULL DEFAULT 1,
+    user_id          VARCHAR(100)    NOT NULL,
+    status           VARCHAR(32)     NOT NULL,
+    inputs_json      CLOB,
+    outputs_json     CLOB,
+    error_message    VARCHAR(1000),
+    started_at       TIMESTAMP       NOT NULL,
+    finished_at      TIMESTAMP,
+    elapsed_ms       BIGINT,
+    created_at       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted          INTEGER         NOT NULL DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_workflow_run_workflow ON t_workflow_run(workflow_id, deleted, created_at);
+CREATE INDEX idx_workflow_run_user ON t_workflow_run(user_id, deleted, created_at);
+CREATE INDEX idx_workflow_run_status ON t_workflow_run(status, deleted, created_at);
+
+CREATE TABLE t_workflow_node_run (
+    id               BIGINT          NOT NULL AUTO_INCREMENT,
+    workflow_run_id  BIGINT          NOT NULL,
+    workflow_id      BIGINT          NOT NULL,
+    node_id          VARCHAR(64)     NOT NULL,
+    node_type        VARCHAR(32)     NOT NULL,
+    status           VARCHAR(32)     NOT NULL,
+    input_json       CLOB,
+    output_json      CLOB,
+    error_message    VARCHAR(1000),
+    started_at       TIMESTAMP       NOT NULL,
+    finished_at      TIMESTAMP,
+    elapsed_ms       BIGINT,
+    created_at       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted          INTEGER         NOT NULL DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_workflow_node_run ON t_workflow_node_run(workflow_run_id, deleted, id);
+CREATE INDEX idx_workflow_node_run_node ON t_workflow_node_run(workflow_id, node_id, deleted, created_at);
 
 -- ----------------------------
 -- 13. Demo 演示

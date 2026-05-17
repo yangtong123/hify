@@ -10,6 +10,7 @@ import com.hify.modules.knowledge.api.dto.KnowledgeDocumentResponse;
 import com.hify.modules.knowledge.api.dto.RetrievedChunkDto;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public interface KnowledgeService {
@@ -39,4 +40,6 @@ public interface KnowledgeService {
     List<KnowledgeBaseResponse> listAgentKnowledgeBases(Long agentId);
 
     List<RetrievedChunkDto> retrieveForAgent(Long agentId, String query);
+
+    List<RetrievedChunkDto> retrieve(List<Long> knowledgeBaseIds, String query, Integer topK, BigDecimal similarityThreshold);
 }

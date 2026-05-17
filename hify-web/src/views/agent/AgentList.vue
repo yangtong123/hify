@@ -37,6 +37,7 @@ interface AgentForm {
   description: string
   systemPrompt: string
   modelConfigId: number | null
+  workflowId: number | null
   temperature: number
   maxTokens: number
   topP: number
@@ -99,6 +100,7 @@ function defaultForm(): AgentForm {
     description: '',
     systemPrompt: '',
     modelConfigId: modelOptions.value[0]?.id ?? null,
+    workflowId: null,
     temperature: 0.7,
     maxTokens: 4096,
     topP: 1,
@@ -161,6 +163,7 @@ async function handleEdit(row: AgentListResponse) {
     description: detail.description,
     systemPrompt: detail.systemPrompt,
     modelConfigId: detail.modelConfigId,
+    workflowId: detail.workflowId ?? null,
     temperature: detail.temperature,
     maxTokens: detail.maxTokens,
     topP: detail.topP,
@@ -184,6 +187,7 @@ async function handleSubmit(form: Record<string, unknown>) {
     description: f.description || '',
     systemPrompt: f.systemPrompt || '',
     modelConfigId: f.modelConfigId,
+    workflowId: f.workflowId ?? null,
     temperature: Number(f.temperature),
     maxTokens: Number(f.maxTokens),
     topP: Number(f.topP),

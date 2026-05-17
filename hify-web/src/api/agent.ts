@@ -12,6 +12,7 @@ export interface AgentListResponse {
   description: string
   systemPrompt: string
   modelConfigId: number
+  workflowId: number | null
   modelName: string
   providerName: string
   temperature: number
@@ -57,6 +58,7 @@ export interface AgentRequest {
   description: string
   systemPrompt: string
   modelConfigId: number
+  workflowId?: number | null
   temperature: number
   maxTokens: number
   topP: number

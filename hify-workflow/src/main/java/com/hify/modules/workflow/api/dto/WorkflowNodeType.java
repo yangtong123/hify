@@ -11,6 +11,7 @@ public enum WorkflowNodeType {
 
     START,
     LLM,
+    KNOWLEDGE,
     CONDITION,
     TOOL,
     END;

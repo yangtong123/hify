@@ -1,6 +1,8 @@
 package com.hify.modules.chat.domain;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.hify.common.exception.BizException;
+import com.hify.common.exception.ErrorCode;
 import com.hify.modules.agent.api.AgentService;
 import com.hify.modules.agent.api.dto.AgentDetailResponse;
 import com.hify.modules.chat.api.ChatStreamCallback;
@@ -17,6 +19,7 @@ import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ChatResponse;
 import com.hify.modules.provider.api.dto.ModelConfigDto;
+import com.hify.modules.workflow.api.WorkflowRunService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +39,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,6 +62,9 @@ class ChatServiceImplTest {
     @Mock
     private KnowledgeService knowledgeService;
 
+    @Mock
+    private WorkflowRunService workflowRunService;
+
     private final List<ChatSessionPo> sessions = new ArrayList<>();
     private final List<ChatMessagePo> messages = new ArrayList<>();
     private ChatServiceImpl chatService;
@@ -64,11 +72,12 @@ class ChatServiceImplTest {
     @BeforeEach
     void setUp() {
         Executor directExecutor = Runnable::run;
-        chatService = new ChatServiceImpl(sessionMapper, messageMapper, agentService, providerService, knowledgeService, directExecutor, null);
+        chatService = new ChatServiceImpl(sessionMapper, messageMapper, agentService, providerService,
+                knowledgeService, workflowRunService, directExecutor, null);
         stubPersistence();
-        when(agentService.getById(1L)).thenReturn(agent());
+        lenient().when(agentService.getById(1L)).thenReturn(agent());
         when(providerService.getModelConfig(10L)).thenReturn(model());
-        when(knowledgeService.retrieveForAgent(eq(1L), any())).thenReturn(List.of());
+        lenient().when(knowledgeService.retrieveForAgent(eq(1L), any())).thenReturn(List.of());
     }
 
     @Test
@@ -156,6 +165,47 @@ class ChatServiceImplTest {
         assertThat(messages).extracting(ChatMessagePo::getRole).containsExactly("user", "assistant");
     }
 
+    @Test
+    void streamMessageShouldExecuteWorkflowWhenAgentHasWorkflowId() {
+        AgentDetailResponse agent = agent();
+        agent.setWorkflowId(99L);
+        when(agentService.getById(1L)).thenReturn(agent);
+        when(workflowRunService.execute(99L, "Hi")).thenReturn("workflow answer");
+        List<ChatStreamChunk> chunks = new ArrayList<>();
+        List<ChatCompletionResponse> completions = new ArrayList<>();
+
+        chatService.streamMessage(request(null, "Hi"), callback(chunks, completions));
+
+        verify(workflowRunService).execute(99L, "Hi");
+        verify(providerService, never()).streamChat(any(), any(), any());
+        assertThat(chunks).hasSize(1);
+        assertThat(chunks.get(0).getDone()).isTrue();
+        assertThat(completions).hasSize(1);
+        assertThat(completions.get(0).getAssistantMessage().getContent()).isEqualTo("workflow answer");
+        assertThat(messages).extracting(ChatMessagePo::getRole).containsExactly("user", "assistant");
+    }
+
+    @Test
+    void streamMessageShouldPushErrorAndCompleteWhenWorkflowBizExceptionOccurs() {
+        AgentDetailResponse agent = agent();
+        agent.setWorkflowId(99L);
+        when(agentService.getById(1L)).thenReturn(agent);
+        when(workflowRunService.execute(99L, "Hi"))
+                .thenThrow(new BizException(ErrorCode.PARAM_ERROR, "工作流配置错误"));
+        List<ChatStreamChunk> chunks = new ArrayList<>();
+        List<ChatCompletionResponse> completions = new ArrayList<>();
+
+        chatService.streamMessage(request(null, "Hi"), callback(chunks, completions));
+
+        assertThat(chunks).hasSize(2);
+        assertThat(chunks.get(0).getContent()).isEqualTo("工作流执行失败：工作流配置错误");
+        assertThat(chunks.get(0).getDone()).isFalse();
+        assertThat(chunks.get(1).getDone()).isTrue();
+        assertThat(completions).hasSize(1);
+        assertThat(completions.get(0).getAssistantMessage().getContent()).isEqualTo("工作流执行失败：工作流配置错误");
+        verify(providerService, never()).streamChat(any(), any(), any());
+    }
+
     private void stubPersistence() {
         AtomicLong sessionId = new AtomicLong(1);
         AtomicLong messageId = new AtomicLong(100);
@@ -182,7 +232,8 @@ class ChatServiceImplTest {
             messages.add(message);
             return 1;
         }).when(messageMapper).insert(any(ChatMessagePo.class));
-        when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenAnswer(invocation -> new ArrayList<>(messages));
+        lenient().when(messageMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenAnswer(invocation -> new ArrayList<>(messages));
     }
 
     private ChatSendRequest request(Long sessionId, String content) {
@@ -192,6 +243,28 @@ class ChatServiceImplTest {
         request.setUserId("u-1");
         request.setContent(content);
         return request;
+    }
+
+    private ChatStreamCallback callback(List<ChatStreamChunk> chunks, List<ChatCompletionResponse> completions) {
+        return new ChatStreamCallback() {
+            @Override
+            public void onSession(ChatSessionResponse session) {
+            }
+
+            @Override
+            public void onDelta(ChatStreamChunk chunk) {
+                chunks.add(chunk);
+            }
+
+            @Override
+            public void onComplete(ChatCompletionResponse response) {
+                completions.add(response);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+            }
+        };
     }
 
     private AgentDetailResponse agent() {

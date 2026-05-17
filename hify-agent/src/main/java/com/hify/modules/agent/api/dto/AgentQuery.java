@@ -9,6 +9,7 @@ public class AgentQuery {
 
     private String name;
     private Integer enabled;
+    private Long workflowId;
 
     @Min(value = 1, message = "page 不能小于 1")
     private Integer page = 1;

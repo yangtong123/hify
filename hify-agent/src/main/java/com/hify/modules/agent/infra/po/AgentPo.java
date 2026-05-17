@@ -1,5 +1,6 @@
 package com.hify.modules.agent.infra.po;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
@@ -25,6 +26,9 @@ public class AgentPo extends BaseEntity {
 
     @TableField("model_config_id")
     private Long modelConfigId;
+
+    @TableField(value = "workflow_id", updateStrategy = FieldStrategy.ALWAYS)
+    private Long workflowId;
 
     @TableField("temperature")
     private BigDecimal temperature;

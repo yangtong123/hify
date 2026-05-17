@@ -2,7 +2,11 @@ package com.hify.modules.workflow.web;
 
 import com.hify.common.web.PageResult;
 import com.hify.common.web.Result;
+import com.hify.modules.workflow.api.WorkflowRunService;
 import com.hify.modules.workflow.api.WorkflowService;
+import com.hify.modules.workflow.api.dto.run.WorkflowRunDetailResponse;
+import com.hify.modules.workflow.api.dto.run.WorkflowRunRequest;
+import com.hify.modules.workflow.api.dto.run.WorkflowRunResponse;
 import com.hify.modules.workflow.api.dto.WorkflowCreateRequest;
 import com.hify.modules.workflow.api.dto.WorkflowDetailResponse;
 import com.hify.modules.workflow.api.dto.WorkflowListResponse;
@@ -27,6 +31,7 @@ import java.util.List;
 public class WorkflowController {
 
     private final WorkflowService workflowService;
+    private final WorkflowRunService workflowRunService;
 
     @PostMapping
     public Result<WorkflowDetailResponse> create(@Valid @RequestBody WorkflowCreateRequest request) {
@@ -53,5 +58,16 @@ public class WorkflowController {
     public Result<Void> delete(@PathVariable Long id) {
         workflowService.delete(id);
         return Result.ok();
+    }
+
+    @PostMapping("/{id}/runs")
+    public Result<WorkflowRunResponse> run(@PathVariable Long id,
+                                           @Valid @RequestBody WorkflowRunRequest request) {
+        return Result.ok(workflowRunService.run(id, request));
+    }
+
+    @GetMapping("/runs/{runId}")
+    public Result<WorkflowRunDetailResponse> getRun(@PathVariable Long runId) {
+        return Result.ok(workflowRunService.getRun(runId));
     }
 }

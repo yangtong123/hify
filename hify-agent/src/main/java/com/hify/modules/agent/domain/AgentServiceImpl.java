@@ -63,8 +63,8 @@ public class AgentServiceImpl implements AgentService {
     @Override
     @Transactional
     public AgentDetailResponse create(AgentCreateRequest request) {
-        log.info("Agent create started: name={}, modelConfigId={}, enabled={}",
-                request.getName(), request.getModelConfigId(), request.getEnabled());
+        log.info("Agent create started: name={}, modelConfigId={}, workflowId={}, enabled={}",
+                request.getName(), request.getModelConfigId(), request.getWorkflowId(), request.getEnabled());
         checkNameDuplicate(request.getName(), null);
         validateModelEnabled(request.getModelConfigId());
         List<Long> mcpServerIds = validateMcpServers(request.getMcpServerIds());
@@ -74,8 +74,8 @@ public class AgentServiceImpl implements AgentService {
         replaceTools(po.getId(), mcpServerIds);
         replaceKnowledgeBases(po.getId(), request.getKnowledgeBaseIds());
 
-        log.info("Agent created: id={}, name={}, modelConfigId={}, mcpServers={}, knowledgeBases={}",
-                po.getId(), po.getName(), po.getModelConfigId(), mcpServerIds.size(),
+        log.info("Agent created: id={}, name={}, modelConfigId={}, workflowId={}, mcpServers={}, knowledgeBases={}",
+                po.getId(), po.getName(), po.getModelConfigId(), po.getWorkflowId(), mcpServerIds.size(),
                 countList(request.getKnowledgeBaseIds()));
         return buildDetail(po);
     }
@@ -83,8 +83,8 @@ public class AgentServiceImpl implements AgentService {
     @Override
     @Transactional
     public AgentDetailResponse update(Long id, AgentUpdateRequest request) {
-        log.info("Agent update started: id={}, name={}, modelConfigId={}, enabled={}",
-                id, request.getName(), request.getModelConfigId(), request.getEnabled());
+        log.info("Agent update started: id={}, name={}, modelConfigId={}, workflowId={}, enabled={}",
+                id, request.getName(), request.getModelConfigId(), request.getWorkflowId(), request.getEnabled());
         AgentPo po = agentMapper.selectById(id);
         if (po == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "Agent 不存在");
@@ -98,6 +98,7 @@ public class AgentServiceImpl implements AgentService {
         po.setDescription(request.getDescription());
         po.setSystemPrompt(request.getSystemPrompt());
         po.setModelConfigId(request.getModelConfigId());
+        po.setWorkflowId(request.getWorkflowId());
         po.setTemperature(defaultIfNull(request.getTemperature(), DEFAULT_TEMPERATURE));
         po.setMaxTokens(defaultIfNull(request.getMaxTokens(), DEFAULT_MAX_TOKENS));
         po.setTopP(defaultIfNull(request.getTopP(), DEFAULT_TOP_P));
@@ -110,8 +111,8 @@ public class AgentServiceImpl implements AgentService {
         replaceTools(id, mcpServerIds);
         replaceKnowledgeBases(id, request.getKnowledgeBaseIds());
 
-        log.info("Agent updated: id={}, name={}, modelConfigId={}, enabled={}, mcpServers={}, knowledgeBases={}",
-                id, po.getName(), po.getModelConfigId(), po.getEnabled(), mcpServerIds.size(),
+        log.info("Agent updated: id={}, name={}, modelConfigId={}, workflowId={}, enabled={}, mcpServers={}, knowledgeBases={}",
+                id, po.getName(), po.getModelConfigId(), po.getWorkflowId(), po.getEnabled(), mcpServerIds.size(),
                 countList(request.getKnowledgeBaseIds()));
         return buildDetail(po);
     }
@@ -144,6 +145,7 @@ public class AgentServiceImpl implements AgentService {
         LambdaQueryWrapper<AgentPo> wrapper = new LambdaQueryWrapper<AgentPo>()
                 .like(StringUtils.hasText(query.getName()), AgentPo::getName, query.getName())
                 .eq(query.getEnabled() != null, AgentPo::getEnabled, query.getEnabled())
+                .eq(query.getWorkflowId() != null, AgentPo::getWorkflowId, query.getWorkflowId())
                 .orderByDesc(AgentPo::getCreatedAt);
 
         Page<AgentPo> page = PageHelper.toPage(query.getPage(), query.getSize());
@@ -186,6 +188,7 @@ public class AgentServiceImpl implements AgentService {
         po.setDescription(request.getDescription());
         po.setSystemPrompt(request.getSystemPrompt());
         po.setModelConfigId(request.getModelConfigId());
+        po.setWorkflowId(request.getWorkflowId());
         po.setTemperature(defaultIfNull(request.getTemperature(), DEFAULT_TEMPERATURE));
         po.setMaxTokens(defaultIfNull(request.getMaxTokens(), DEFAULT_MAX_TOKENS));
         po.setTopP(defaultIfNull(request.getTopP(), DEFAULT_TOP_P));
@@ -237,6 +240,7 @@ public class AgentServiceImpl implements AgentService {
         resp.setDescription(po.getDescription());
         resp.setSystemPrompt(po.getSystemPrompt());
         resp.setModelConfigId(po.getModelConfigId());
+        resp.setWorkflowId(po.getWorkflowId());
         resp.setTemperature(po.getTemperature());
         resp.setMaxTokens(po.getMaxTokens());
         resp.setTopP(po.getTopP());
@@ -256,6 +260,7 @@ public class AgentServiceImpl implements AgentService {
         resp.setDescription(po.getDescription());
         resp.setSystemPrompt(po.getSystemPrompt());
         resp.setModelConfigId(po.getModelConfigId());
+        resp.setWorkflowId(po.getWorkflowId());
         resp.setTemperature(po.getTemperature());
         resp.setMaxTokens(po.getMaxTokens());
         resp.setTopP(po.getTopP());

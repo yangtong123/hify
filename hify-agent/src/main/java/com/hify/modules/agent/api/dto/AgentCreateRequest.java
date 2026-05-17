@@ -24,6 +24,8 @@ public class AgentCreateRequest {
     @NotNull(message = "模型配置不能为空")
     private Long modelConfigId;
 
+    private Long workflowId;
+
     @DecimalMin(value = "0.00", message = "temperature 不能小于 0")
     @DecimalMax(value = "2.00", message = "temperature 不能大于 2")
     private BigDecimal temperature;

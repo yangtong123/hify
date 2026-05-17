@@ -325,6 +325,49 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         return chunks;
     }
 
+    @Override
+    public List<RetrievedChunkDto> retrieve(List<Long> knowledgeBaseIds, String query, Integer topK, BigDecimal similarityThreshold) {
+        long start = System.currentTimeMillis();
+        if (!StringUtils.hasText(query)) {
+            log.info("Knowledge retrieval skipped: reason=empty_query");
+            return List.of();
+        }
+        List<Long> distinctIds = knowledgeBaseIds != null
+                ? knowledgeBaseIds.stream().filter(Objects::nonNull).distinct().toList()
+                : List.of();
+        if (distinctIds.isEmpty()) {
+            log.info("Knowledge retrieval skipped: reason=empty_knowledge_base_ids");
+            return List.of();
+        }
+        List<KnowledgeBasePo> knowledgeBases = listActiveKnowledgeBasePos(distinctIds);
+        if (knowledgeBases.isEmpty()) {
+            log.info("Knowledge retrieval skipped: requestedKnowledgeBases={}, reason=no_active_knowledge_base", distinctIds.size());
+            return List.of();
+        }
+
+        int effectiveTopK = topK != null && topK > 0 ? topK : knowledgeBases.stream()
+                .map(KnowledgeBasePo::getTopK)
+                .filter(Objects::nonNull)
+                .max(Integer::compareTo)
+                .orElse(DEFAULT_TOP_K);
+        double threshold = similarityThreshold != null ? similarityThreshold.doubleValue() : knowledgeBases.stream()
+                .map(KnowledgeBasePo::getSimilarityThreshold)
+                .filter(Objects::nonNull)
+                .map(BigDecimal::doubleValue)
+                .min(Double::compareTo)
+                .orElse(DEFAULT_SIMILARITY_THRESHOLD.doubleValue());
+        Long embeddingModelConfigId = knowledgeBases.get(0).getEmbeddingModelConfigId();
+        int embeddingDimension = knowledgeBases.get(0).getEmbeddingDimension();
+
+        List<Double> queryEmbedding = embed(embeddingModelConfigId, List.of(query), embeddingDimension).get(0);
+        List<Long> activeIds = knowledgeBases.stream().map(KnowledgeBasePo::getId).toList();
+        List<KnowledgeChunkRecord> records = vectorRepository.search(activeIds, queryEmbedding, effectiveTopK, threshold);
+        List<RetrievedChunkDto> chunks = enrichRetrievedChunks(records);
+        log.info("Knowledge retrieval completed: knowledgeBases={}, topK={}, threshold={}, hits={}, latency={}ms",
+                activeIds.size(), effectiveTopK, threshold, chunks.size(), System.currentTimeMillis() - start);
+        return chunks;
+    }
+
     private void scheduleProcessDocument(KnowledgeBasePo knowledgeBase, KnowledgeDocumentPo document, byte[] bytes) {
         Runnable task = () -> processDocument(knowledgeBase, document, bytes);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -458,6 +501,20 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             return List.of();
         }
         List<Long> ids = mappings.stream().map(AgentKnowledgeBasePo::getKnowledgeBaseId).toList();
+        Map<Long, KnowledgeBasePo> baseMap = knowledgeBaseMapper.selectBatchIds(ids).stream()
+                .filter(item -> STATUS_ACTIVE.equals(item.getStatus()))
+                .collect(Collectors.toMap(KnowledgeBasePo::getId, item -> item));
+        List<KnowledgeBasePo> bases = new ArrayList<>();
+        for (Long id : ids) {
+            KnowledgeBasePo item = baseMap.get(id);
+            if (item != null) {
+                bases.add(item);
+            }
+        }
+        return bases;
+    }
+
+    private List<KnowledgeBasePo> listActiveKnowledgeBasePos(List<Long> ids) {
         Map<Long, KnowledgeBasePo> baseMap = knowledgeBaseMapper.selectBatchIds(ids).stream()
                 .filter(item -> STATUS_ACTIVE.equals(item.getStatus()))
                 .collect(Collectors.toMap(KnowledgeBasePo::getId, item -> item));

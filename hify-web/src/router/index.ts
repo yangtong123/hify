@@ -28,6 +28,16 @@ const router = createRouter({
       component: () => import('@/views/knowledge/KnowledgeDocuments.vue'),
     },
     {
+      path: '/workflows',
+      name: 'workflows',
+      component: () => import('@/views/workflow/WorkflowList.vue'),
+    },
+    {
+      path: '/workflows/create',
+      name: 'workflow-create',
+      component: () => import('@/views/workflow/WorkflowCreate.vue'),
+    },
+    {
       path: '/chat',
       name: 'chat',
       component: () => import('@/views/chat/ChatList.vue'),

@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Setting, User, ChatDotRound, Fold, Expand, Collection } from '@element-plus/icons-vue'
+import {
+  ChatDotRound,
+  Collection,
+  Connection,
+  Expand,
+  Fold,
+  Setting,
+  User,
+} from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,6 +19,7 @@ const menuItems = [
   { path: '/providers', icon: Setting, label: '提供商管理' },
   { path: '/agents', icon: User, label: 'Agent 管理' },
   { path: '/knowledge', icon: Collection, label: '知识库管理' },
+  { path: '/workflows', icon: Connection, label: '工作流管理' },
   { path: '/chat', icon: ChatDotRound, label: '对话' },
 ]
 
@@ -24,7 +33,12 @@ const breadcrumbs = computed(() => {
     items.push({ label: '文档管理' })
     return items
   }
-  const current = menuItems.find((m) => m.path === route.path)
+  if (route.name === 'workflow-create') {
+    items.push({ label: '工作流管理', path: '/workflows' })
+    items.push({ label: '新建工作流' })
+    return items
+  }
+  const current = menuItems.find((m) => route.path === m.path)
   if (current) {
     items.push({ label: current.label })
   }
@@ -33,6 +47,9 @@ const breadcrumbs = computed(() => {
 
 /* ---------- methods ---------- */
 function isActive(path: string): boolean {
+  if (path === '/workflows') {
+    return route.path.startsWith('/workflows')
+  }
   return route.path === path
 }
 

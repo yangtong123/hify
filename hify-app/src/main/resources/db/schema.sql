@@ -56,6 +56,7 @@ CREATE TABLE t_agent (
     description     VARCHAR(500)    NOT NULL DEFAULT '',
     system_prompt   MEDIUMTEXT      COMMENT '系统提示词',
     model_config_id BIGINT          NOT NULL COMMENT '绑定的模型配置 ID',
+    workflow_id     BIGINT          DEFAULT NULL COMMENT '绑定的工作流 ID',
     temperature     DECIMAL(3,2)    NOT NULL DEFAULT 0.70 COMMENT '0.00~2.00',
     max_tokens      INT             NOT NULL DEFAULT 4096 COMMENT '最大输出 token 数',
     top_p           DECIMAL(3,2)    NOT NULL DEFAULT 1.00 COMMENT '核采样参数',
@@ -67,7 +68,8 @@ CREATE TABLE t_agent (
     deleted         TINYINT(1)      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     UNIQUE INDEX uk_agent_name_deleted (name, deleted),
-    INDEX idx_agent_model_deleted (model_config_id, deleted)
+    INDEX idx_agent_model_deleted (model_config_id, deleted),
+    INDEX idx_agent_workflow_deleted (workflow_id, deleted)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent 配置';
 
 -- ----------------------------
@@ -234,7 +236,7 @@ CREATE TABLE t_workflow_node (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
     workflow_id     BIGINT          NOT NULL COMMENT '工作流 ID',
     node_id         VARCHAR(64)     NOT NULL COMMENT '节点业务 ID',
-    node_type       VARCHAR(32)     NOT NULL COMMENT 'start/llm/condition/tool/end',
+    node_type       VARCHAR(32)     NOT NULL COMMENT 'start/llm/knowledge/condition/tool/end',
     name            VARCHAR(128)    NOT NULL COMMENT '节点名称',
     config_json     JSON            COMMENT '节点类型专属配置',
     position_json   JSON            COMMENT '前端画布位置',
@@ -261,6 +263,48 @@ CREATE TABLE t_workflow_edge (
     INDEX idx_workflow_edge_source (workflow_id, source_node_id, deleted, priority),
     INDEX idx_workflow_edge_target (workflow_id, target_node_id, deleted)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流节点连接';
+
+CREATE TABLE t_workflow_run (
+    id               BIGINT          NOT NULL AUTO_INCREMENT,
+    workflow_id      BIGINT          NOT NULL COMMENT '工作流 ID',
+    workflow_version INT             NOT NULL DEFAULT 1 COMMENT '执行时工作流版本',
+    user_id          VARCHAR(100)    NOT NULL COMMENT '用户标识',
+    status           VARCHAR(32)     NOT NULL COMMENT 'running/succeeded/failed',
+    inputs_json      JSON            COMMENT '执行输入',
+    outputs_json     JSON            COMMENT '执行输出',
+    error_message    VARCHAR(1000)   COMMENT '失败原因',
+    started_at       DATETIME(3)     NOT NULL COMMENT '开始时间',
+    finished_at      DATETIME(3)     COMMENT '结束时间',
+    elapsed_ms       BIGINT          COMMENT '耗时 ms',
+    created_at       DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at       DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted          TINYINT(1)      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    INDEX idx_workflow_run_workflow (workflow_id, deleted, created_at),
+    INDEX idx_workflow_run_user (user_id, deleted, created_at),
+    INDEX idx_workflow_run_status (status, deleted, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流执行记录';
+
+CREATE TABLE t_workflow_node_run (
+    id               BIGINT          NOT NULL AUTO_INCREMENT,
+    workflow_run_id  BIGINT          NOT NULL COMMENT '工作流执行 ID',
+    workflow_id      BIGINT          NOT NULL COMMENT '工作流 ID',
+    node_id          VARCHAR(64)     NOT NULL COMMENT '节点业务 ID',
+    node_type        VARCHAR(32)     NOT NULL COMMENT '节点类型',
+    status           VARCHAR(32)     NOT NULL COMMENT 'succeeded/failed/skipped',
+    input_json       JSON            COMMENT '节点输入快照',
+    output_json      JSON            COMMENT '节点输出',
+    error_message    VARCHAR(1000)   COMMENT '失败原因',
+    started_at       DATETIME(3)     NOT NULL COMMENT '开始时间',
+    finished_at      DATETIME(3)     COMMENT '结束时间',
+    elapsed_ms       BIGINT          COMMENT '耗时 ms',
+    created_at       DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at       DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted          TINYINT(1)      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    INDEX idx_workflow_node_run (workflow_run_id, deleted, id),
+    INDEX idx_workflow_node_run_node (workflow_id, node_id, deleted, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流节点执行记录';
 
 -- ----------------------------
 -- 13. Demo 演示

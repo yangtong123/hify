@@ -8,6 +8,7 @@ import com.hify.common.exception.ErrorCode;
 import com.hify.modules.workflow.api.dto.WorkflowNodeType;
 import com.hify.modules.workflow.domain.model.ConditionNodeConfig;
 import com.hify.modules.workflow.domain.model.EndNodeConfig;
+import com.hify.modules.workflow.domain.model.KnowledgeNodeConfig;
 import com.hify.modules.workflow.domain.model.LlmNodeConfig;
 import com.hify.modules.workflow.domain.model.NodeConfig;
 import com.hify.modules.workflow.domain.model.StartNodeConfig;
@@ -27,6 +28,7 @@ public class NodeConfigParser {
             NodeConfig nodeConfig = switch (nodeType) {
                 case START -> objectMapper.treeToValue(configNode, StartNodeConfig.class);
                 case LLM -> objectMapper.treeToValue(configNode, LlmNodeConfig.class);
+                case KNOWLEDGE -> objectMapper.treeToValue(configNode, KnowledgeNodeConfig.class);
                 case CONDITION -> objectMapper.treeToValue(configNode, ConditionNodeConfig.class);
                 case TOOL -> objectMapper.treeToValue(configNode, ToolNodeConfig.class);
                 case END -> objectMapper.treeToValue(configNode, EndNodeConfig.class);
@@ -41,6 +43,7 @@ public class NodeConfigParser {
     private void validate(WorkflowNodeType nodeType, NodeConfig config) {
         if (config instanceof StartNodeConfig
                 || config instanceof LlmNodeConfig
+                || config instanceof KnowledgeNodeConfig
                 || config instanceof ConditionNodeConfig
                 || config instanceof ToolNodeConfig
                 || config instanceof EndNodeConfig) {

@@ -28,6 +28,7 @@ import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ModelConfigDto;
 import com.hify.modules.knowledge.api.KnowledgeService;
 import com.hify.modules.knowledge.api.dto.RetrievedChunkDto;
+import com.hify.modules.workflow.api.WorkflowRunService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -62,6 +63,7 @@ public class ChatServiceImpl implements ChatService {
     private final AgentService agentService;
     private final ProviderService providerService;
     private final KnowledgeService knowledgeService;
+    private final WorkflowRunService workflowRunService;
     private final Executor llmExecutor;
     private final TransactionTemplate transactionTemplate;
 
@@ -70,6 +72,7 @@ public class ChatServiceImpl implements ChatService {
                            AgentService agentService,
                            ProviderService providerService,
                            KnowledgeService knowledgeService,
+                           WorkflowRunService workflowRunService,
                            @Qualifier("llmExecutor") Executor llmExecutor,
                            TransactionTemplate transactionTemplate) {
         this.sessionMapper = sessionMapper;
@@ -77,6 +80,7 @@ public class ChatServiceImpl implements ChatService {
         this.agentService = agentService;
         this.providerService = providerService;
         this.knowledgeService = knowledgeService;
+        this.workflowRunService = workflowRunService;
         this.llmExecutor = llmExecutor;
         this.transactionTemplate = transactionTemplate;
     }
@@ -168,6 +172,11 @@ public class ChatServiceImpl implements ChatService {
                 resolved.session().getId(), userMessage.getId(), resolved.agent().getId());
         callback.onSession(toSessionResponse(resolved.session()));
 
+        if (resolved.agent().getWorkflowId() != null) {
+            streamWorkflowMessage(resolved, userMessage, request.getContent(), callback);
+            return;
+        }
+
         ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
         StreamingState state = new StreamingState();
         long start = System.currentTimeMillis();
@@ -215,6 +224,61 @@ public class ChatServiceImpl implements ChatService {
             callback.onError(e);
             throw e;
         }
+    }
+
+    private void streamWorkflowMessage(ResolvedChat resolved,
+                                       ChatMessagePo userMessage,
+                                       String userContent,
+                                       ChatStreamCallback callback) {
+        long start = System.currentTimeMillis();
+        try {
+            String workflowResult = workflowRunService.execute(resolved.agent().getWorkflowId(), userContent);
+            long latencyMs = System.currentTimeMillis() - start;
+            ChatMessagePo assistantMessage = saveMessage(
+                    resolved.session().getId(),
+                    "assistant",
+                    workflowResult,
+                    null,
+                    null,
+                    workflowMetadata(resolved.agent().getWorkflowId(), latencyMs, null));
+            log.info("Chat workflow assistant message saved: sessionId={}, messageId={}, agentId={}, workflowId={}",
+                    resolved.session().getId(), assistantMessage.getId(), resolved.agent().getId(),
+                    resolved.agent().getWorkflowId());
+
+            sendDoneChunk(resolved.session().getId(), callback);
+            callback.onComplete(toCompletionResponse(resolved.session(), userMessage, assistantMessage));
+            log.info("Chat workflow stream completed: sessionId={}, agentId={}, workflowId={}, latency={}ms",
+                    resolved.session().getId(), resolved.agent().getId(), resolved.agent().getWorkflowId(), latencyMs);
+        } catch (BizException e) {
+            long latencyMs = System.currentTimeMillis() - start;
+            String errorMessage = "工作流执行失败：" + e.getMessage();
+            ChatMessagePo assistantMessage = saveMessage(
+                    resolved.session().getId(),
+                    "assistant",
+                    errorMessage,
+                    null,
+                    null,
+                    workflowMetadata(resolved.agent().getWorkflowId(), latencyMs, e.getMessage()));
+            log.warn("Chat workflow stream failed: sessionId={}, agentId={}, workflowId={}, error={}",
+                    resolved.session().getId(), resolved.agent().getId(), resolved.agent().getWorkflowId(),
+                    e.getMessage());
+
+            ChatStreamChunk error = new ChatStreamChunk();
+            error.setSessionId(resolved.session().getId());
+            error.setContent(errorMessage);
+            error.setDone(false);
+            callback.onDelta(error);
+            sendDoneChunk(resolved.session().getId(), callback);
+            callback.onComplete(toCompletionResponse(resolved.session(), userMessage, assistantMessage));
+        }
+    }
+
+    private void sendDoneChunk(Long sessionId, ChatStreamCallback callback) {
+        ChatStreamChunk done = new ChatStreamChunk();
+        done.setSessionId(sessionId);
+        done.setFinishReason("stop");
+        done.setDone(true);
+        callback.onDelta(done);
     }
 
     @Override
@@ -486,6 +550,16 @@ public class ChatServiceImpl implements ChatService {
             metadata.put("promptTokens", response.getUsage().getPromptTokens());
             metadata.put("completionTokens", response.getUsage().getCompletionTokens());
             metadata.put("totalTokens", response.getUsage().getTotalTokens());
+        }
+        return metadata;
+    }
+
+    private Map<String, Object> workflowMetadata(Long workflowId, long latencyMs, String errorMessage) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("workflowId", workflowId);
+        metadata.put("latencyMs", latencyMs);
+        if (StringUtils.hasText(errorMessage)) {
+            metadata.put("errorMessage", errorMessage);
         }
         return metadata;
     }
