@@ -114,7 +114,8 @@ CREATE TABLE t_mcp_server (
 -- ----------------------------
 CREATE TABLE t_chat_session (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
-    agent_id        BIGINT          NOT NULL COMMENT '关联 Agent',
+    agent_id        BIGINT          DEFAULT NULL COMMENT '关联 Agent',
+    workflow_id     BIGINT          DEFAULT NULL COMMENT '关联工作流',
     title           VARCHAR(200)    COMMENT '会话标题（首轮对话自动生成）',
     user_id         VARCHAR(100)    NOT NULL COMMENT '用户标识',
     status          VARCHAR(20)     NOT NULL DEFAULT 'active' COMMENT 'active / archived',
@@ -123,6 +124,7 @@ CREATE TABLE t_chat_session (
     deleted         TINYINT(1)      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     INDEX idx_agent_deleted_created (agent_id, deleted, created_at),
+    INDEX idx_workflow_deleted_created (workflow_id, deleted, created_at),
     INDEX idx_user_deleted_created (user_id, deleted, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对话会话';
 

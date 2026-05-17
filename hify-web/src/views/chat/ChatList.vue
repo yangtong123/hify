@@ -11,13 +11,18 @@ import {
   getChatSessions,
   sendChatMessage,
   streamChatMessage,
+  type ChatSendRequest,
   type ChatMessageResponse,
   type ChatSessionResponse,
 } from '@/api/chat'
+import { getWorkflowList, type WorkflowListResponse } from '@/api/workflow'
 
 const userId = ref('local-user')
 const agents = ref<AgentListResponse[]>([])
+const workflows = ref<WorkflowListResponse[]>([])
+const targetType = ref<'agent' | 'workflow'>('agent')
 const selectedAgentId = ref<number | null>(null)
+const selectedWorkflowId = ref<number | null>(null)
 const sessions = ref<ChatSessionResponse[]>([])
 const activeSession = ref<ChatSessionResponse | null>(null)
 interface ChatMessageView extends ChatMessageResponse {
@@ -29,6 +34,7 @@ const messages = ref<ChatMessageView[]>([])
 const input = ref('')
 const useStream = ref(true)
 const loadingAgents = ref(false)
+const loadingWorkflows = ref(false)
 const loadingSessions = ref(false)
 const loadingMessages = ref(false)
 const sending = ref(false)
@@ -38,12 +44,27 @@ const selectedAgent = computed(() =>
   agents.value.find((agent) => agent.id === selectedAgentId.value) || null,
 )
 
-const canSend = computed(() =>
-  input.value.trim().length > 0 && userId.value.trim().length > 0 && selectedAgentId.value != null && !sending.value,
+const selectedWorkflow = computed(() =>
+  workflows.value.find((workflow) => workflow.id === selectedWorkflowId.value) || null,
 )
 
+const selectedTargetReady = computed(() =>
+  targetType.value === 'agent' ? selectedAgentId.value != null : selectedWorkflowId.value != null,
+)
+
+const canSend = computed(() =>
+  input.value.trim().length > 0 && userId.value.trim().length > 0 && selectedTargetReady.value && !sending.value,
+)
+
+const targetLabel = computed(() => {
+  if (targetType.value === 'workflow') {
+    return selectedWorkflow.value ? workflowLabel(selectedWorkflow.value) : '请选择工作流'
+  }
+  return selectedAgent.value ? agentLabel(selectedAgent.value) : '请选择 Agent'
+})
+
 onMounted(async () => {
-  await loadAgents()
+  await Promise.all([loadAgents(), loadWorkflows()])
   await refreshSessions()
 })
 
@@ -57,6 +78,19 @@ async function loadAgents() {
     }
   } finally {
     loadingAgents.value = false
+  }
+}
+
+async function loadWorkflows() {
+  loadingWorkflows.value = true
+  try {
+    const result = await getWorkflowList({ page: 1, size: 100 })
+    workflows.value = result.records
+    if (selectedWorkflowId.value == null && result.records.length > 0) {
+      selectedWorkflowId.value = result.records[0].id
+    }
+  } finally {
+    loadingWorkflows.value = false
   }
 }
 
@@ -95,7 +129,13 @@ async function refreshSessions() {
 
 async function selectSession(session: ChatSessionResponse) {
   activeSession.value = session
-  selectedAgentId.value = session.agentId
+  if (session.workflowId != null) {
+    targetType.value = 'workflow'
+    selectedWorkflowId.value = session.workflowId
+  } else {
+    targetType.value = 'agent'
+    selectedAgentId.value = session.agentId
+  }
   loadingMessages.value = true
   try {
     const history = await getChatMessages(session.id, { size: 50 })
@@ -111,16 +151,33 @@ function newChat() {
   messages.value = []
 }
 
+function onTargetTypeChange() {
+  newChat()
+}
+
+function onAgentChange() {
+  if (targetType.value === 'agent') {
+    newChat()
+  }
+}
+
+function onWorkflowChange() {
+  if (targetType.value === 'workflow') {
+    newChat()
+  }
+}
+
 async function send() {
   const content = input.value.trim()
-  if (!canSend.value || selectedAgentId.value == null) {
+  if (!canSend.value) {
     return
   }
   input.value = ''
   sending.value = true
 
-  const request = {
-    agentId: selectedAgentId.value,
+  const request: ChatSendRequest = {
+    agentId: targetType.value === 'agent' ? selectedAgentId.value ?? undefined : undefined,
+    workflowId: targetType.value === 'workflow' ? selectedWorkflowId.value ?? undefined : undefined,
     sessionId: activeSession.value?.id,
     userId: userId.value.trim(),
     content,
@@ -147,12 +204,7 @@ async function send() {
   }
 }
 
-async function sendStream(request: {
-  agentId: number
-  sessionId?: number
-  userId: string
-  content: string
-}) {
+async function sendStream(request: ChatSendRequest) {
   const userMessage = tempMessage('user', request.content)
   const assistantMessage = tempMessage('assistant', '')
   assistantMessage.pending = true
@@ -294,6 +346,14 @@ function agentLabel(agent: AgentListResponse) {
   return `${agent.name} · ${agent.providerName || '-'} / ${agent.modelName || '-'}`
 }
 
+function workflowLabel(workflow: WorkflowListResponse) {
+  return `${workflow.name} · ${workflow.status}`
+}
+
+function sessionTargetText(session: ChatSessionResponse) {
+  return session.workflowId != null ? '工作流' : 'Agent'
+}
+
 function sessionTime(session: ChatSessionResponse) {
   return new Date(session.updatedAt || session.createdAt).toLocaleString()
 }
@@ -323,18 +383,40 @@ function sessionTitle(session: ChatSessionResponse) {
       <aside class="session-panel">
         <div class="panel-controls">
           <el-input v-model="userId" size="small" placeholder="用户标识" @change="refreshSessions" />
+          <el-radio-group v-model="targetType" size="small" class="target-switch" @change="onTargetTypeChange">
+            <el-radio-button label="agent">Agent</el-radio-button>
+            <el-radio-button label="workflow">工作流</el-radio-button>
+          </el-radio-group>
           <el-select
+            v-if="targetType === 'agent'"
             v-model="selectedAgentId"
             size="small"
             filterable
             placeholder="选择 Agent"
             :loading="loadingAgents"
+            @change="onAgentChange"
           >
             <el-option
               v-for="agent in agents"
               :key="agent.id"
               :label="agentLabel(agent)"
               :value="agent.id"
+            />
+          </el-select>
+          <el-select
+            v-else
+            v-model="selectedWorkflowId"
+            size="small"
+            filterable
+            placeholder="选择工作流"
+            :loading="loadingWorkflows"
+            @change="onWorkflowChange"
+          >
+            <el-option
+              v-for="workflow in workflows"
+              :key="workflow.id"
+              :label="workflowLabel(workflow)"
+              :value="workflow.id"
             />
           </el-select>
         </div>
@@ -348,6 +430,7 @@ function sessionTitle(session: ChatSessionResponse) {
             @click="selectSession(session)"
           >
             <span>{{ sessionTitle(session) }}</span>
+            <em>{{ sessionTargetText(session) }}</em>
             <small>{{ sessionTime(session) }}</small>
           </button>
           <div v-if="sessions.length === 0" class="empty-state">
@@ -361,7 +444,7 @@ function sessionTitle(session: ChatSessionResponse) {
         <div class="conversation-header">
           <div>
             <h2>{{ activeSession?.title || '新对话' }}</h2>
-            <p>{{ selectedAgent ? agentLabel(selectedAgent) : '请选择 Agent' }}</p>
+            <p>{{ targetLabel }}</p>
           </div>
           <div class="conversation-actions">
             <el-switch v-model="useStream" active-text="SSE" inactive-text="普通" />
@@ -399,7 +482,7 @@ function sessionTitle(session: ChatSessionResponse) {
           </div>
           <div v-if="messages.length === 0" class="empty-conversation">
             <el-icon><ChatLineRound /></el-icon>
-            <span>选择历史会话或发送第一条消息</span>
+            <span>选择历史会话，或选择 Agent/工作流后发送第一条消息</span>
           </div>
         </div>
 
@@ -462,6 +545,18 @@ function sessionTitle(session: ChatSessionResponse) {
   border-bottom: 1px solid var(--border-light);
 }
 
+.target-switch {
+  width: 100%;
+}
+
+.target-switch :deep(.el-radio-button) {
+  flex: 1;
+}
+
+.target-switch :deep(.el-radio-button__inner) {
+  width: 100%;
+}
+
 .session-list {
   flex: 1;
   min-height: 0;
@@ -499,9 +594,15 @@ function sessionTitle(session: ChatSessionResponse) {
 }
 
 .session-item small,
+.session-item em,
 .conversation-header p,
 .message-bubble small {
   color: var(--text-tertiary);
+}
+
+.session-item em {
+  font-style: normal;
+  font-size: var(--text-xs);
 }
 
 .conversation-panel {

@@ -11,6 +11,8 @@ public class ChatSessionResponse {
 
     private Long agentId;
 
+    private Long workflowId;
+
     private String title;
 
     private String userId;

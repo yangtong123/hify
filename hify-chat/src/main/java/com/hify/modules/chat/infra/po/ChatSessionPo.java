@@ -14,6 +14,9 @@ public class ChatSessionPo extends BaseEntity {
     @TableField("agent_id")
     private Long agentId;
 
+    @TableField("workflow_id")
+    private Long workflowId;
+
     @TableField("title")
     private String title;
 

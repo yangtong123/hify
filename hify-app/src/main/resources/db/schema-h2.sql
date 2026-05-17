@@ -123,7 +123,8 @@ VALUES (1, 'Mock MCP', 'Mock MCP server for Agent verification', 'stdio', 'echo'
 -- ----------------------------
 CREATE TABLE t_chat_session (
     id              BIGINT          NOT NULL AUTO_INCREMENT,
-    agent_id        BIGINT          NOT NULL,
+    agent_id        BIGINT,
+    workflow_id     BIGINT,
     title           VARCHAR(200),
     user_id         VARCHAR(100)    NOT NULL,
     status          VARCHAR(20)     NOT NULL DEFAULT 'active',
@@ -133,6 +134,7 @@ CREATE TABLE t_chat_session (
     PRIMARY KEY (id)
 );
 CREATE INDEX idx_agent_deleted_created ON t_chat_session(agent_id, deleted, created_at);
+CREATE INDEX idx_workflow_deleted_created ON t_chat_session(workflow_id, deleted, created_at);
 CREATE INDEX idx_user_deleted_created ON t_chat_session(user_id, deleted, created_at);
 
 -- ----------------------------

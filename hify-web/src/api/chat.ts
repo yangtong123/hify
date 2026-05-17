@@ -2,6 +2,7 @@ import http from './index'
 
 export interface ChatSendRequest {
   agentId?: number
+  workflowId?: number
   sessionId?: number
   userId: string
   content: string
@@ -9,7 +10,8 @@ export interface ChatSendRequest {
 
 export interface ChatSessionResponse {
   id: number
-  agentId: number
+  agentId: number | null
+  workflowId: number | null
   title: string
   userId: string
   status: 'active' | 'archived'

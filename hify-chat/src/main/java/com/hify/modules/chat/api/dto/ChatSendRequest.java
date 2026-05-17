@@ -8,6 +8,8 @@ public class ChatSendRequest {
 
     private Long agentId;
 
+    private Long workflowId;
+
     private Long sessionId;
 
     @NotBlank(message = "用户标识不能为空")

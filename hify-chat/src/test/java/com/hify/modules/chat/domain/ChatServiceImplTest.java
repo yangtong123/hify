@@ -76,7 +76,7 @@ class ChatServiceImplTest {
                 knowledgeService, workflowRunService, directExecutor, null);
         stubPersistence();
         lenient().when(agentService.getById(1L)).thenReturn(agent());
-        when(providerService.getModelConfig(10L)).thenReturn(model());
+        lenient().when(providerService.getModelConfig(10L)).thenReturn(model());
         lenient().when(knowledgeService.retrieveForAgent(eq(1L), any())).thenReturn(List.of());
     }
 
@@ -166,36 +166,32 @@ class ChatServiceImplTest {
     }
 
     @Test
-    void streamMessageShouldExecuteWorkflowWhenAgentHasWorkflowId() {
-        AgentDetailResponse agent = agent();
-        agent.setWorkflowId(99L);
-        when(agentService.getById(1L)).thenReturn(agent);
+    void streamMessageShouldExecuteWorkflowWhenRequestHasWorkflowId() {
         when(workflowRunService.execute(99L, "Hi")).thenReturn("workflow answer");
         List<ChatStreamChunk> chunks = new ArrayList<>();
         List<ChatCompletionResponse> completions = new ArrayList<>();
 
-        chatService.streamMessage(request(null, "Hi"), callback(chunks, completions));
+        chatService.streamMessage(workflowRequest(null, "Hi"), callback(chunks, completions));
 
         verify(workflowRunService).execute(99L, "Hi");
         verify(providerService, never()).streamChat(any(), any(), any());
         assertThat(chunks).hasSize(1);
         assertThat(chunks.get(0).getDone()).isTrue();
         assertThat(completions).hasSize(1);
+        assertThat(completions.get(0).getSession().getAgentId()).isNull();
+        assertThat(completions.get(0).getSession().getWorkflowId()).isEqualTo(99L);
         assertThat(completions.get(0).getAssistantMessage().getContent()).isEqualTo("workflow answer");
         assertThat(messages).extracting(ChatMessagePo::getRole).containsExactly("user", "assistant");
     }
 
     @Test
     void streamMessageShouldPushErrorAndCompleteWhenWorkflowBizExceptionOccurs() {
-        AgentDetailResponse agent = agent();
-        agent.setWorkflowId(99L);
-        when(agentService.getById(1L)).thenReturn(agent);
         when(workflowRunService.execute(99L, "Hi"))
                 .thenThrow(new BizException(ErrorCode.PARAM_ERROR, "工作流配置错误"));
         List<ChatStreamChunk> chunks = new ArrayList<>();
         List<ChatCompletionResponse> completions = new ArrayList<>();
 
-        chatService.streamMessage(request(null, "Hi"), callback(chunks, completions));
+        chatService.streamMessage(workflowRequest(null, "Hi"), callback(chunks, completions));
 
         assertThat(chunks).hasSize(2);
         assertThat(chunks.get(0).getContent()).isEqualTo("工作流执行失败：工作流配置错误");
@@ -239,6 +235,15 @@ class ChatServiceImplTest {
     private ChatSendRequest request(Long sessionId, String content) {
         ChatSendRequest request = new ChatSendRequest();
         request.setAgentId(1L);
+        request.setSessionId(sessionId);
+        request.setUserId("u-1");
+        request.setContent(content);
+        return request;
+    }
+
+    private ChatSendRequest workflowRequest(Long sessionId, String content) {
+        ChatSendRequest request = new ChatSendRequest();
+        request.setWorkflowId(99L);
         request.setSessionId(sessionId);
         request.setUserId("u-1");
         request.setContent(content);

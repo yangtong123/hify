@@ -87,15 +87,21 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public ChatCompletionResponse completeMessage(ChatSendRequest request) {
-        log.info("Chat completion started: userId={}, agentId={}, sessionId={}, contentLength={}",
+        log.info("Chat completion started: userId={}, agentId={}, workflowId={}, sessionId={}, contentLength={}",
                 request != null ? request.getUserId() : null,
                 request != null ? request.getAgentId() : null,
+                request != null ? request.getWorkflowId() : null,
                 request != null ? request.getSessionId() : null,
                 request != null ? lengthOf(request.getContent()) : 0);
         ResolvedChat resolved = resolveChat(request);
         ChatMessagePo userMessage = saveUserMessage(resolved.session().getId(), request.getContent());
-        log.info("Chat user message saved: sessionId={}, messageId={}, agentId={}",
-                resolved.session().getId(), userMessage.getId(), resolved.agent().getId());
+        log.info("Chat user message saved: sessionId={}, messageId={}, agentId={}, workflowId={}",
+                resolved.session().getId(), userMessage.getId(), agentIdOf(resolved), resolved.workflowId());
+
+        if (resolved.workflowId() != null) {
+            ChatMessagePo assistantMessage = executeWorkflowMessage(resolved, request.getContent(), null);
+            return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
+        }
 
         ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
         long start = System.currentTimeMillis();
@@ -123,9 +129,10 @@ public class ChatServiceImpl implements ChatService {
     public SseEmitter sendMessage(ChatSendRequest request) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         AtomicBoolean closed = new AtomicBoolean(false);
-        log.info("Chat SSE request accepted: userId={}, agentId={}, sessionId={}, timeoutMs={}, contentLength={}",
+        log.info("Chat SSE request accepted: userId={}, agentId={}, workflowId={}, sessionId={}, timeoutMs={}, contentLength={}",
                 request != null ? request.getUserId() : null,
                 request != null ? request.getAgentId() : null,
+                request != null ? request.getWorkflowId() : null,
                 request != null ? request.getSessionId() : null,
                 SSE_TIMEOUT_MS,
                 request != null ? lengthOf(request.getContent()) : 0);
@@ -161,18 +168,19 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public void streamMessage(ChatSendRequest request, ChatStreamCallback callback) {
-        log.info("Chat stream started: userId={}, agentId={}, sessionId={}, contentLength={}",
+        log.info("Chat stream started: userId={}, agentId={}, workflowId={}, sessionId={}, contentLength={}",
                 request != null ? request.getUserId() : null,
                 request != null ? request.getAgentId() : null,
+                request != null ? request.getWorkflowId() : null,
                 request != null ? request.getSessionId() : null,
                 request != null ? lengthOf(request.getContent()) : 0);
         ResolvedChat resolved = resolveChat(request);
         ChatMessagePo userMessage = saveUserMessage(resolved.session().getId(), request.getContent());
-        log.info("Chat stream user message saved: sessionId={}, messageId={}, agentId={}",
-                resolved.session().getId(), userMessage.getId(), resolved.agent().getId());
+        log.info("Chat stream user message saved: sessionId={}, messageId={}, agentId={}, workflowId={}",
+                resolved.session().getId(), userMessage.getId(), agentIdOf(resolved), resolved.workflowId());
         callback.onSession(toSessionResponse(resolved.session()));
 
-        if (resolved.agent().getWorkflowId() != null) {
+        if (resolved.workflowId() != null) {
             streamWorkflowMessage(resolved, userMessage, request.getContent(), callback);
             return;
         }
@@ -232,23 +240,12 @@ public class ChatServiceImpl implements ChatService {
                                        ChatStreamCallback callback) {
         long start = System.currentTimeMillis();
         try {
-            String workflowResult = workflowRunService.execute(resolved.agent().getWorkflowId(), userContent);
+            ChatMessagePo assistantMessage = executeWorkflowMessage(resolved, userContent, start);
             long latencyMs = System.currentTimeMillis() - start;
-            ChatMessagePo assistantMessage = saveMessage(
-                    resolved.session().getId(),
-                    "assistant",
-                    workflowResult,
-                    null,
-                    null,
-                    workflowMetadata(resolved.agent().getWorkflowId(), latencyMs, null));
-            log.info("Chat workflow assistant message saved: sessionId={}, messageId={}, agentId={}, workflowId={}",
-                    resolved.session().getId(), assistantMessage.getId(), resolved.agent().getId(),
-                    resolved.agent().getWorkflowId());
-
             sendDoneChunk(resolved.session().getId(), callback);
             callback.onComplete(toCompletionResponse(resolved.session(), userMessage, assistantMessage));
             log.info("Chat workflow stream completed: sessionId={}, agentId={}, workflowId={}, latency={}ms",
-                    resolved.session().getId(), resolved.agent().getId(), resolved.agent().getWorkflowId(), latencyMs);
+                    resolved.session().getId(), agentIdOf(resolved), resolved.workflowId(), latencyMs);
         } catch (BizException e) {
             long latencyMs = System.currentTimeMillis() - start;
             String errorMessage = "工作流执行失败：" + e.getMessage();
@@ -258,10 +255,9 @@ public class ChatServiceImpl implements ChatService {
                     errorMessage,
                     null,
                     null,
-                    workflowMetadata(resolved.agent().getWorkflowId(), latencyMs, e.getMessage()));
+                    workflowMetadata(resolved.workflowId(), latencyMs, e.getMessage()));
             log.warn("Chat workflow stream failed: sessionId={}, agentId={}, workflowId={}, error={}",
-                    resolved.session().getId(), resolved.agent().getId(), resolved.agent().getWorkflowId(),
-                    e.getMessage());
+                    resolved.session().getId(), agentIdOf(resolved), resolved.workflowId(), e.getMessage());
 
             ChatStreamChunk error = new ChatStreamChunk();
             error.setSessionId(resolved.session().getId());
@@ -271,6 +267,22 @@ public class ChatServiceImpl implements ChatService {
             sendDoneChunk(resolved.session().getId(), callback);
             callback.onComplete(toCompletionResponse(resolved.session(), userMessage, assistantMessage));
         }
+    }
+
+    private ChatMessagePo executeWorkflowMessage(ResolvedChat resolved, String userContent, Long startAt) {
+        long start = startAt != null ? startAt : System.currentTimeMillis();
+        String workflowResult = workflowRunService.execute(resolved.workflowId(), userContent);
+        long latencyMs = System.currentTimeMillis() - start;
+        ChatMessagePo assistantMessage = saveMessage(
+                resolved.session().getId(),
+                "assistant",
+                workflowResult,
+                null,
+                null,
+                workflowMetadata(resolved.workflowId(), latencyMs, null));
+        log.info("Chat workflow assistant message saved: sessionId={}, messageId={}, agentId={}, workflowId={}",
+                resolved.session().getId(), assistantMessage.getId(), agentIdOf(resolved), resolved.workflowId());
+        return assistantMessage;
     }
 
     private void sendDoneChunk(Long sessionId, ChatStreamCallback callback) {
@@ -333,8 +345,8 @@ public class ChatServiceImpl implements ChatService {
         session.setStatus(STATUS_ARCHIVED);
         session.setUpdatedAt(null);
         sessionMapper.updateById(session);
-        log.info("Chat session archived: sessionId={}, agentId={}, userId={}",
-                sessionId, session.getAgentId(), session.getUserId());
+        log.info("Chat session archived: sessionId={}, agentId={}, workflowId={}, userId={}",
+                sessionId, session.getAgentId(), session.getWorkflowId(), session.getUserId());
     }
 
     private ResolvedChat resolveChat(ChatSendRequest request) {
@@ -348,53 +360,84 @@ public class ChatServiceImpl implements ChatService {
             throw new BizException(ErrorCode.PARAM_ERROR, "消息内容不能为空");
         }
 
-        ChatSessionPo session;
-        Long agentId;
-        AgentDetailResponse agent;
         if (request.getSessionId() != null) {
-            session = requireSession(request.getSessionId());
+            ChatSessionPo session = requireSession(request.getSessionId());
             if (!Objects.equals(session.getUserId(), request.getUserId())) {
                 throw new BizException(ErrorCode.FORBIDDEN, "无权访问该会话");
             }
-            if (request.getAgentId() != null && !Objects.equals(request.getAgentId(), session.getAgentId())) {
-                throw new BizException(ErrorCode.PARAM_ERROR, "会话所属 Agent 与请求不一致");
+            validateSessionTarget(request, session);
+            if (session.getWorkflowId() != null) {
+                log.info("Chat resolved: sessionId={}, agentId={}, workflowId={}, modelConfigId={}, model={}, newSession={}",
+                        session.getId(), null, session.getWorkflowId(), null, null, false);
+                return new ResolvedChat(session, null, null, session.getWorkflowId());
             }
-            agentId = session.getAgentId();
-            agent = requireEnabledAgent(agentId);
-        } else {
-            if (request.getAgentId() == null) {
-                throw new BizException(ErrorCode.PARAM_ERROR, "新会话必须指定 Agent ID");
-            }
-            agentId = request.getAgentId();
-            agent = requireEnabledAgent(agentId);
-            session = createSession(agentId, request.getUserId(), request.getContent());
+            AgentDetailResponse agent = requireEnabledAgent(session.getAgentId());
+            ModelConfigDto model = providerService.getModelConfig(agent.getModelConfigId());
+            Long workflowId = agent.getWorkflowId();
+            log.info("Chat resolved: sessionId={}, agentId={}, workflowId={}, modelConfigId={}, model={}, newSession={}",
+                    session.getId(), agent.getId(), workflowId, agent.getModelConfigId(), model.getModelId(), false);
+            return new ResolvedChat(session, agent, model, workflowId);
         }
 
+        boolean hasAgentTarget = request.getAgentId() != null;
+        boolean hasWorkflowTarget = request.getWorkflowId() != null;
+        if (hasAgentTarget == hasWorkflowTarget) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "新会话必须且只能指定 Agent ID 或工作流 ID");
+        }
+        if (hasWorkflowTarget) {
+            ChatSessionPo session = createSession(null, request.getWorkflowId(), request.getUserId(), request.getContent());
+            log.info("Chat resolved: sessionId={}, agentId={}, workflowId={}, modelConfigId={}, model={}, newSession={}",
+                    session.getId(), null, request.getWorkflowId(), null, null, true);
+            return new ResolvedChat(session, null, null, request.getWorkflowId());
+        }
+
+        AgentDetailResponse agent = requireEnabledAgent(request.getAgentId());
+        ChatSessionPo session = createSession(agent.getId(), null, request.getUserId(), request.getContent());
         ModelConfigDto model = providerService.getModelConfig(agent.getModelConfigId());
-        log.info("Chat resolved: sessionId={}, agentId={}, modelConfigId={}, model={}, newSession={}",
-                session.getId(), agent.getId(), agent.getModelConfigId(), model.getModelId(),
-                request.getSessionId() == null);
-        return new ResolvedChat(session, agent, model);
+        Long workflowId = agent.getWorkflowId();
+        log.info("Chat resolved: sessionId={}, agentId={}, workflowId={}, modelConfigId={}, model={}, newSession={}",
+                session.getId(), agent.getId(), workflowId, agent.getModelConfigId(), model.getModelId(), true);
+        return new ResolvedChat(session, agent, model, workflowId);
+    }
+
+    private void validateSessionTarget(ChatSendRequest request, ChatSessionPo session) {
+        if (request.getAgentId() != null && !Objects.equals(request.getAgentId(), session.getAgentId())) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "会话所属 Agent 与请求不一致");
+        }
+        if (request.getWorkflowId() != null && !Objects.equals(request.getWorkflowId(), session.getWorkflowId())) {
+            Long agentWorkflowId = null;
+            if (session.getAgentId() != null) {
+                AgentDetailResponse sessionAgent = requireEnabledAgent(session.getAgentId());
+                agentWorkflowId = sessionAgent.getWorkflowId();
+            }
+            if (!Objects.equals(request.getWorkflowId(), agentWorkflowId)) {
+                throw new BizException(ErrorCode.PARAM_ERROR, "会话所属工作流与请求不一致");
+            }
+        }
     }
 
     private AgentDetailResponse requireEnabledAgent(Long agentId) {
+        if (agentId == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "会话未关联 Agent");
+        }
         AgentDetailResponse agent = agentService.getById(agentId);
-        if (!Objects.equals(agent.getEnabled(), 1)) {
+        if (agent == null || !Objects.equals(agent.getEnabled(), 1)) {
             throw new BizException(ErrorCode.PARAM_ERROR, "Agent 未启用: " + agentId);
         }
         return agent;
     }
 
-    private ChatSessionPo createSession(Long agentId, String userId, String content) {
+    private ChatSessionPo createSession(Long agentId, Long workflowId, String userId, String content) {
         return executeInTransaction(() -> {
             ChatSessionPo session = new ChatSessionPo();
             session.setAgentId(agentId);
+            session.setWorkflowId(workflowId);
             session.setUserId(userId);
             session.setTitle(generateTitle(content));
             session.setStatus(STATUS_ACTIVE);
             sessionMapper.insert(session);
-            log.info("Chat session created: sessionId={}, agentId={}, userId={}, titleLength={}",
-                    session.getId(), agentId, userId, lengthOf(session.getTitle()));
+            log.info("Chat session created: sessionId={}, agentId={}, workflowId={}, userId={}, titleLength={}",
+                    session.getId(), agentId, workflowId, userId, lengthOf(session.getTitle()));
             return session;
         });
     }
@@ -582,12 +625,17 @@ public class ChatServiceImpl implements ChatService {
         ChatSessionResponse response = new ChatSessionResponse();
         response.setId(po.getId());
         response.setAgentId(po.getAgentId());
+        response.setWorkflowId(po.getWorkflowId());
         response.setTitle(po.getTitle());
         response.setUserId(po.getUserId());
         response.setStatus(po.getStatus());
         response.setCreatedAt(po.getCreatedAt());
         response.setUpdatedAt(po.getUpdatedAt());
         return response;
+    }
+
+    private Long agentIdOf(ResolvedChat resolved) {
+        return resolved.agent() != null ? resolved.agent().getId() : resolved.session().getAgentId();
     }
 
     private ChatMessageResponse toMessageResponse(ChatMessagePo po) {
@@ -705,7 +753,7 @@ public class ChatServiceImpl implements ChatService {
         }
     }
 
-    private record ResolvedChat(ChatSessionPo session, AgentDetailResponse agent, ModelConfigDto model) {
+    private record ResolvedChat(ChatSessionPo session, AgentDetailResponse agent, ModelConfigDto model, Long workflowId) {
     }
 
     private static final class StreamingState {
