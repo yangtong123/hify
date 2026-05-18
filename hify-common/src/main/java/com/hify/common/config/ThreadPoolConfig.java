@@ -1,5 +1,6 @@
 package com.hify.common.config;
 
+import com.hify.common.log.ContextPropagatingThreadPoolExecutor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,7 +17,7 @@ public class ThreadPoolConfig {
     @Bean
     @Qualifier("llmExecutor")
     public Executor llmExecutor() {
-        return new ThreadPoolExecutor(
+        return new ContextPropagatingThreadPoolExecutor(
                 10, 50,
                 60L, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(100),
@@ -28,7 +29,7 @@ public class ThreadPoolConfig {
     @Bean
     @Qualifier("asyncExecutor")
     public Executor asyncExecutor() {
-        return new ThreadPoolExecutor(
+        return new ContextPropagatingThreadPoolExecutor(
                 5, 20,
                 60L, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(200),

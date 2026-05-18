@@ -12,6 +12,7 @@ import com.hify.modules.workflow.domain.execution.WorkflowRuntimeNode;
 import com.hify.modules.workflow.domain.model.LlmNodeConfig;
 import com.hify.modules.workflow.domain.model.NodeConfig;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -21,6 +22,7 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class LlmNodeHandler implements WorkflowNodeHandler {
 
     private final ProviderService providerService;
@@ -35,6 +37,7 @@ public class LlmNodeHandler implements WorkflowNodeHandler {
     public NodeExecuteResult execute(WorkflowRuntimeNode node, NodeConfig config, WorkflowContext context) {
         LlmNodeConfig llmConfig = (LlmNodeConfig) config;
         ModelConfigDto model = providerService.getModelConfig(llmConfig.modelConfigId());
+        long start = System.currentTimeMillis();
 
         ChatRequest request = new ChatRequest();
         request.setModel(model.getModelId());
@@ -45,11 +48,24 @@ public class LlmNodeHandler implements WorkflowNodeHandler {
         }
         messages.add(message("user", templateRenderer.render(llmConfig.userPromptTemplate(), context)));
         request.setMessages(messages);
+        log.info("Workflow LLM node started: workflowId={}, runId={}, nodeId={}, modelConfigId={}, model={}, messages={}",
+                context.getWorkflowId(), context.getRunId(), node.nodeId(), llmConfig.modelConfigId(),
+                model.getModelId(), messages.size());
 
-        ChatResponse response = providerService.chat(llmConfig.modelConfigId(), request);
-        String outputVariable = StringUtils.hasText(llmConfig.outputVariable()) ? llmConfig.outputVariable() : "text";
-        context.putNodeOutput(node.nodeId(), outputVariable, response.getContent());
-        return NodeExecuteResult.success(Map.of(outputVariable, response.getContent()));
+        try {
+            ChatResponse response = providerService.chat(llmConfig.modelConfigId(), request);
+            String outputVariable = StringUtils.hasText(llmConfig.outputVariable()) ? llmConfig.outputVariable() : "text";
+            context.putNodeOutput(node.nodeId(), outputVariable, response.getContent());
+            log.info("Workflow LLM node completed: workflowId={}, runId={}, nodeId={}, model={}, latency={}ms, tokens={}",
+                    context.getWorkflowId(), context.getRunId(), node.nodeId(), response.getModel(),
+                    System.currentTimeMillis() - start, totalTokens(response));
+            return NodeExecuteResult.success(Map.of(outputVariable, response.getContent()));
+        } catch (RuntimeException e) {
+            log.warn("Workflow LLM node failed: workflowId={}, runId={}, nodeId={}, modelConfigId={}, latency={}ms, error={}",
+                    context.getWorkflowId(), context.getRunId(), node.nodeId(), llmConfig.modelConfigId(),
+                    System.currentTimeMillis() - start, e.getMessage());
+            throw e;
+        }
     }
 
     private ChatRequest.Message message(String role, String content) {
@@ -57,5 +73,9 @@ public class LlmNodeHandler implements WorkflowNodeHandler {
         message.setRole(role);
         message.setContent(content);
         return message;
+    }
+
+    private Integer totalTokens(ChatResponse response) {
+        return response != null && response.getUsage() != null ? response.getUsage().getTotalTokens() : null;
     }
 }

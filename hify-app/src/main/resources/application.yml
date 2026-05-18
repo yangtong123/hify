@@ -6,6 +6,11 @@ server:
 spring:
   application:
     name: hify
+  main:
+    banner-mode: "off"
+  mvc:
+    servlet:
+      load-on-startup: 1
 
   datasource:
     url: jdbc:mysql://localhost:3306/hify?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
@@ -37,6 +42,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
   global-config:
+    banner: false
     db-config:
       id-type: auto
 

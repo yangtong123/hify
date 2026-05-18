@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
 import com.hify.common.exception.LlmApiException;
+import com.hify.common.log.TraceContext;
 import com.hify.common.util.PageHelper;
 import com.hify.common.web.PageResult;
 import com.hify.modules.agent.api.AgentService;
@@ -118,6 +119,8 @@ public class ChatServiceImpl implements ChatService {
         ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
         if (hasTools(providerRequest)) {
             long toolStart = System.currentTimeMillis();
+            log.info("Chat tool flow started: sessionId={}, agentId={}, tools={}",
+                    resolved.session().getId(), resolved.agent().getId(), providerRequest.getTools().size());
             com.hify.modules.provider.api.dto.ChatResponse firstResponse = providerService.chat(
                     resolved.agent().getModelConfigId(), providerRequest);
             if ("tool_calls".equals(firstResponse.getFinishReason())) {
@@ -126,10 +129,14 @@ public class ChatServiceImpl implements ChatService {
                         resolved.agent().getModelConfigId(), secondRequest);
                 long latencyMs = System.currentTimeMillis() - toolStart;
                 ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), secondResponse, latencyMs);
+                log.info("Chat tool flow completed: sessionId={}, agentId={}, latency={}ms, finishReason={}",
+                        resolved.session().getId(), resolved.agent().getId(), latencyMs, secondResponse.getFinishReason());
                 return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
             }
             long latencyMs = System.currentTimeMillis() - toolStart;
             ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), firstResponse, latencyMs);
+            log.info("Chat tool flow completed: sessionId={}, agentId={}, latency={}ms, finishReason={}",
+                    resolved.session().getId(), resolved.agent().getId(), latencyMs, firstResponse.getFinishReason());
             return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
         }
 
@@ -173,7 +180,7 @@ public class ChatServiceImpl implements ChatService {
             log.warn("Chat SSE emitter error: {}", throwable.getMessage());
         });
 
-        llmExecutor.execute(() -> {
+        llmExecutor.execute(TraceContext.wrap(() -> {
             try {
                 streamMessage(request, new EmitterChatStreamCallback(emitter, closed));
             } catch (ClientDisconnectedException e) {
@@ -190,7 +197,7 @@ public class ChatServiceImpl implements ChatService {
             } catch (RuntimeException e) {
                 completeWithError(emitter, closed, e);
             }
-        });
+        }));
 
         return emitter;
     }
@@ -216,6 +223,8 @@ public class ChatServiceImpl implements ChatService {
 
         ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
         if (hasTools(providerRequest)) {
+            log.info("Chat tool flow started: sessionId={}, agentId={}, tools={}",
+                    resolved.session().getId(), resolved.agent().getId(), providerRequest.getTools().size());
             streamMessageWithTools(resolved, userMessage, providerRequest, callback);
             return;
         }
@@ -560,11 +569,16 @@ public class ChatServiceImpl implements ChatService {
                     resolved.agent().getModelConfigId(), providerRequest);
             if (!"tool_calls".equals(firstResponse.getFinishReason())) {
                 streamFinalResponse(resolved, userMessage, withoutTools(providerRequest), callback, start);
+                log.info("Chat stream tool flow completed without tool calls: sessionId={}, agentId={}, latency={}ms, finishReason={}",
+                        resolved.session().getId(), resolved.agent().getId(),
+                        System.currentTimeMillis() - start, firstResponse.getFinishReason());
                 return;
             }
 
             ChatRequest secondRequest = buildToolFollowUpRequest(resolved, providerRequest, firstResponse);
             streamFinalResponse(resolved, userMessage, secondRequest, callback, start);
+            log.info("Chat stream tool flow completed: sessionId={}, agentId={}, latency={}ms",
+                    resolved.session().getId(), resolved.agent().getId(), System.currentTimeMillis() - start);
         } catch (RuntimeException e) {
             if (e instanceof ClientDisconnectedException
                     || e instanceof SseSendException
@@ -621,11 +635,22 @@ public class ChatServiceImpl implements ChatService {
         McpToolDto tool = StringUtils.hasText(toolName) ? toolMap.get(toolName) : null;
         if (tool == null) {
             result = "工具调用失败：工具未绑定或不存在: " + toolName;
+            log.warn("Chat tool call skipped: sessionId={}, toolCallId={}, toolName={}, reason=not_bound",
+                    sessionId, toolCallId, toolName);
         } else {
+            long start = System.currentTimeMillis();
+            log.info("Chat tool call started: sessionId={}, toolCallId={}, serverId={}, toolName={}",
+                    sessionId, toolCallId, tool.getMcpServerId(), toolName);
             try {
                 result = mcpClientService.callTool(tool.getMcpServerId(), toolName, parseArguments(argumentsJson));
+                log.info("Chat tool call completed: sessionId={}, toolCallId={}, serverId={}, toolName={}, latency={}ms, resultLength={}",
+                        sessionId, toolCallId, tool.getMcpServerId(), toolName,
+                        System.currentTimeMillis() - start, lengthOf(result));
             } catch (RuntimeException e) {
                 result = "工具调用失败：" + e.getMessage();
+                log.warn("Chat tool call failed: sessionId={}, toolCallId={}, serverId={}, toolName={}, latency={}ms, error={}",
+                        sessionId, toolCallId, tool.getMcpServerId(), toolName,
+                        System.currentTimeMillis() - start, e.getMessage());
             }
         }
 

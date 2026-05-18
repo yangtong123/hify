@@ -26,19 +26,26 @@ public class McpClientServiceImpl implements McpClientService {
     @Override
     public String callTool(Long mcpServerId, String toolName, Map<String, Object> arguments) {
         McpServerPo server = getEnabledServer(mcpServerId);
+        long start = System.currentTimeMillis();
+        log.info("MCP tool call started: serverId={}, serverName={}, toolName={}, arguments={}",
+                mcpServerId, server.getName(), toolName, arguments != null ? arguments.size() : 0);
         try (var client = mcpClientFactory.create(server)) {
             client.initialize();
             McpSchema.CallToolResult result = client.callTool(McpSchema.CallToolRequest.builder()
                     .name(toolName)
                     .arguments(arguments != null ? arguments : Map.of())
                     .build());
-            return result.content().stream()
+            String text = result.content().stream()
                     .filter(McpSchema.TextContent.class::isInstance)
                     .map(McpSchema.TextContent.class::cast)
                     .map(McpSchema.TextContent::text)
                     .collect(Collectors.joining("\n"));
+            log.info("MCP tool call completed: serverId={}, toolName={}, latency={}ms, resultLength={}",
+                    mcpServerId, toolName, System.currentTimeMillis() - start, text.length());
+            return text;
         } catch (RuntimeException e) {
-            log.warn("MCP tool call failed: serverId={}, toolName={}, error={}", mcpServerId, toolName, e.getMessage());
+            log.warn("MCP tool call failed: serverId={}, toolName={}, latency={}ms, error={}",
+                    mcpServerId, toolName, System.currentTimeMillis() - start, e.getMessage());
             throw new BizException(ErrorCode.MCP_TOOL_CALL_FAILED, "MCP 工具调用失败: " + e.getMessage());
         }
     }
