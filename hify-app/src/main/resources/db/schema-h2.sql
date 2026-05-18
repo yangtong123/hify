@@ -85,6 +85,7 @@ CREATE TABLE t_agent_mcp (
 );
 CREATE UNIQUE INDEX uk_agent_mcp_server_deleted ON t_agent_mcp(agent_id, mcp_server_id, deleted);
 CREATE INDEX idx_agent_mcp_agent_deleted ON t_agent_mcp(agent_id, deleted);
+CREATE INDEX idx_agent_mcp_server_deleted ON t_agent_mcp(mcp_server_id, deleted);
 
 -- ----------------------------
 -- 6. MCP 服务配置
@@ -108,6 +109,23 @@ CREATE TABLE t_mcp_server (
 CREATE INDEX idx_name_deleted_mcp ON t_mcp_server(name, deleted);
 CREATE INDEX idx_type_enabled ON t_mcp_server(server_type, is_enabled, deleted);
 
+-- ----------------------------
+-- 7. MCP 工具缓存
+-- ----------------------------
+CREATE TABLE t_mcp_tool (
+    id              BIGINT          NOT NULL AUTO_INCREMENT,
+    mcp_server_id   BIGINT          NOT NULL,
+    name            VARCHAR(100)    NOT NULL,
+    description     VARCHAR(1000),
+    input_schema    CLOB,
+    created_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted         INTEGER         NOT NULL DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX uk_mcp_tool_name_deleted ON t_mcp_tool(mcp_server_id, name, deleted);
+CREATE INDEX idx_mcp_tool_server_deleted ON t_mcp_tool(mcp_server_id, deleted);
+
 -- Mock profile seed data for API verification.
 INSERT INTO t_provider (id, name, type, base_url, auth_config, enabled, created_at, updated_at, deleted)
 VALUES (1, 'Mock Provider', 'mock', 'http://mock.local', NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
@@ -119,7 +137,7 @@ INSERT INTO t_mcp_server (id, name, description, server_type, command, args, url
 VALUES (1, 'Mock MCP', 'Mock MCP server for Agent verification', 'stdio', 'echo', NULL, NULL, NULL, 1, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
 
 -- ----------------------------
--- 7. 对话会话
+-- 8. 对话会话
 -- ----------------------------
 CREATE TABLE t_chat_session (
     id              BIGINT          NOT NULL AUTO_INCREMENT,

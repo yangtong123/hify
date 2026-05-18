@@ -21,7 +21,7 @@ import {
   getAvailableModels,
   type ModelConfigDto,
 } from '@/api/provider'
-import { getMcpServers, type McpServerResponse } from '@/api/mcp'
+import { getMcpServers, type McpServerDto } from '@/api/mcp'
 import { getKnowledgeBaseList, type KnowledgeBaseResponse } from '@/api/knowledge'
 
 interface ModelOption {
@@ -67,7 +67,7 @@ const dialogRef = ref<{ open: (data?: Record<string, unknown>, editMode?: boolea
 const isEditMode = ref(false)
 const editingId = ref<number | null>(null)
 const modelOptions = ref<ModelOption[]>([])
-const mcpServers = ref<McpServerResponse[]>([])
+const mcpServers = ref<McpServerDto[]>([])
 const knowledgeBases = ref<KnowledgeBaseResponse[]>([])
 const loadingOptions = ref(false)
 

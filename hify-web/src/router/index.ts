@@ -18,6 +18,11 @@ const router = createRouter({
       component: () => import('@/views/agent/AgentList.vue'),
     },
     {
+      path: '/mcp-servers',
+      name: 'mcp-servers',
+      component: () => import('@/views/mcp/McpServerList.vue'),
+    },
+    {
       path: '/knowledge',
       name: 'knowledge',
       component: () => import('@/views/knowledge/KnowledgeList.vue'),

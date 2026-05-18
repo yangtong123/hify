@@ -35,6 +35,10 @@
             <groupId>com.hify</groupId>
             <artifactId>hify-workflow</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.hify</groupId>
+            <artifactId>hify-mcp</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -3,6 +3,8 @@ package com.hify.modules.chat.domain;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
 import com.hify.common.exception.LlmApiException;
@@ -28,6 +30,9 @@ import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ModelConfigDto;
 import com.hify.modules.knowledge.api.KnowledgeService;
 import com.hify.modules.knowledge.api.dto.RetrievedChunkDto;
+import com.hify.modules.mcp.api.McpClientService;
+import com.hify.modules.mcp.api.McpService;
+import com.hify.modules.mcp.api.dto.McpToolDto;
 import com.hify.modules.workflow.api.WorkflowRunService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -64,8 +69,11 @@ public class ChatServiceImpl implements ChatService {
     private final ProviderService providerService;
     private final KnowledgeService knowledgeService;
     private final WorkflowRunService workflowRunService;
+    private final McpService mcpService;
+    private final McpClientService mcpClientService;
     private final Executor llmExecutor;
     private final TransactionTemplate transactionTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ChatServiceImpl(ChatSessionMapper sessionMapper,
                            ChatMessageMapper messageMapper,
@@ -73,6 +81,8 @@ public class ChatServiceImpl implements ChatService {
                            ProviderService providerService,
                            KnowledgeService knowledgeService,
                            WorkflowRunService workflowRunService,
+                           McpService mcpService,
+                           McpClientService mcpClientService,
                            @Qualifier("llmExecutor") Executor llmExecutor,
                            TransactionTemplate transactionTemplate) {
         this.sessionMapper = sessionMapper;
@@ -81,6 +91,8 @@ public class ChatServiceImpl implements ChatService {
         this.providerService = providerService;
         this.knowledgeService = knowledgeService;
         this.workflowRunService = workflowRunService;
+        this.mcpService = mcpService;
+        this.mcpClientService = mcpClientService;
         this.llmExecutor = llmExecutor;
         this.transactionTemplate = transactionTemplate;
     }
@@ -104,6 +116,23 @@ public class ChatServiceImpl implements ChatService {
         }
 
         ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
+        if (hasTools(providerRequest)) {
+            long toolStart = System.currentTimeMillis();
+            com.hify.modules.provider.api.dto.ChatResponse firstResponse = providerService.chat(
+                    resolved.agent().getModelConfigId(), providerRequest);
+            if ("tool_calls".equals(firstResponse.getFinishReason())) {
+                ChatRequest secondRequest = buildToolFollowUpRequest(resolved, providerRequest, firstResponse);
+                com.hify.modules.provider.api.dto.ChatResponse secondResponse = providerService.chat(
+                        resolved.agent().getModelConfigId(), secondRequest);
+                long latencyMs = System.currentTimeMillis() - toolStart;
+                ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), secondResponse, latencyMs);
+                return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
+            }
+            long latencyMs = System.currentTimeMillis() - toolStart;
+            ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), firstResponse, latencyMs);
+            return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
+        }
+
         long start = System.currentTimeMillis();
         com.hify.modules.provider.api.dto.ChatResponse providerResponse;
         try {
@@ -186,6 +215,10 @@ public class ChatServiceImpl implements ChatService {
         }
 
         ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
+        if (hasTools(providerRequest)) {
+            streamMessageWithTools(resolved, userMessage, providerRequest, callback);
+            return;
+        }
         StreamingState state = new StreamingState();
         long start = System.currentTimeMillis();
         try {
@@ -449,6 +482,10 @@ public class ChatServiceImpl implements ChatService {
         request.setTopP(resolved.agent().getTopP());
         request.setMaxTokens(resolved.agent().getMaxTokens());
         request.setMessages(buildMessages(resolved, currentUserContent));
+        List<ChatRequest.Tool> tools = buildTools(resolved.agent());
+        if (!tools.isEmpty()) {
+            request.setTools(tools);
+        }
         return request;
     }
 
@@ -472,7 +509,7 @@ public class ChatServiceImpl implements ChatService {
                 .last("LIMIT " + maxMessages));
         Collections.reverse(history);
         for (ChatMessagePo item : history) {
-            messages.add(toProviderMessage(item.getRole(), item.getContent()));
+            messages.add(toProviderMessage(item));
         }
         if (history.stream().noneMatch(item -> Objects.equals(item.getRole(), "user")
                 && Objects.equals(item.getContent(), currentUserContent))) {
@@ -482,6 +519,186 @@ public class ChatServiceImpl implements ChatService {
                 resolved.session().getId(), resolved.agent().getId(), history.size(), messages.size(),
                 StringUtils.hasText(knowledgeContext));
         return messages;
+    }
+
+    private List<ChatRequest.Tool> buildTools(AgentDetailResponse agent) {
+        if (agent.getMcpServers() == null || agent.getMcpServers().isEmpty()) {
+            return List.of();
+        }
+        List<McpToolDto> agentTools = mcpService.listAgentTools(agent.getId());
+        if (agentTools.isEmpty()) {
+            return List.of();
+        }
+        return agentTools.stream()
+                .map(this::toProviderTool)
+                .toList();
+    }
+
+    private ChatRequest.Tool toProviderTool(McpToolDto toolDto) {
+        ChatRequest.Function function = new ChatRequest.Function();
+        function.setName(toolDto.getName());
+        function.setDescription(toolDto.getDescription());
+        function.setParameters(toolDto.getInputSchema());
+
+        ChatRequest.Tool tool = new ChatRequest.Tool();
+        tool.setType("function");
+        tool.setFunction(function);
+        return tool;
+    }
+
+    private boolean hasTools(ChatRequest request) {
+        return request.getTools() != null && !request.getTools().isEmpty();
+    }
+
+    private void streamMessageWithTools(ResolvedChat resolved,
+                                        ChatMessagePo userMessage,
+                                        ChatRequest providerRequest,
+                                        ChatStreamCallback callback) {
+        long start = System.currentTimeMillis();
+        try {
+            com.hify.modules.provider.api.dto.ChatResponse firstResponse = providerService.chat(
+                    resolved.agent().getModelConfigId(), providerRequest);
+            if (!"tool_calls".equals(firstResponse.getFinishReason())) {
+                streamFinalResponse(resolved, userMessage, withoutTools(providerRequest), callback, start);
+                return;
+            }
+
+            ChatRequest secondRequest = buildToolFollowUpRequest(resolved, providerRequest, firstResponse);
+            streamFinalResponse(resolved, userMessage, secondRequest, callback, start);
+        } catch (RuntimeException e) {
+            if (e instanceof ClientDisconnectedException
+                    || e instanceof SseSendException
+                    || e instanceof LlmApiException) {
+                throw e;
+            }
+            log.warn("Chat stream tool flow failed: sessionId={}, agentId={}, modelConfigId={}, error={}",
+                    resolved.session().getId(), resolved.agent().getId(), resolved.agent().getModelConfigId(),
+                    e.getMessage());
+            callback.onError(e);
+            throw e;
+        }
+    }
+
+    private ChatRequest buildToolFollowUpRequest(ResolvedChat resolved,
+                                                 ChatRequest providerRequest,
+                                                 com.hify.modules.provider.api.dto.ChatResponse firstResponse) {
+        List<ChatRequest.Message> messages = new ArrayList<>(providerRequest.getMessages());
+        ChatRequest.Message assistantMessage = toProviderMessage("assistant", firstResponse.getContent());
+        assistantMessage.setToolCalls(toRequestToolCalls(firstResponse.getToolCalls()));
+        messages.add(assistantMessage);
+        saveMessage(
+                resolved.session().getId(),
+                "assistant",
+                firstResponse.getContent(),
+                totalTokens(firstResponse),
+                firstResponse.getToolCalls(),
+                metadata(firstResponse, 0));
+
+        Map<String, McpToolDto> toolMap = new LinkedHashMap<>();
+        for (McpToolDto tool : mcpService.listAgentTools(resolved.agent().getId())) {
+            toolMap.putIfAbsent(tool.getName(), tool);
+        }
+        if (firstResponse.getToolCalls() != null) {
+            for (com.hify.modules.provider.api.dto.ChatResponse.ToolCall toolCall : firstResponse.getToolCalls()) {
+                ChatRequest.Message toolMessage = executeToolCall(resolved.session().getId(), toolMap, toolCall);
+                messages.add(toolMessage);
+            }
+        }
+
+        ChatRequest secondRequest = copyRequest(providerRequest);
+        secondRequest.setTools(null);
+        secondRequest.setMessages(messages);
+        return secondRequest;
+    }
+
+    private ChatRequest.Message executeToolCall(Long sessionId,
+                                                Map<String, McpToolDto> toolMap,
+                                                com.hify.modules.provider.api.dto.ChatResponse.ToolCall toolCall) {
+        String toolName = toolCall != null && toolCall.getFunction() != null ? toolCall.getFunction().getName() : null;
+        String argumentsJson = toolCall != null && toolCall.getFunction() != null ? toolCall.getFunction().getArguments() : null;
+        String toolCallId = toolCall != null ? toolCall.getId() : null;
+        String result;
+        McpToolDto tool = StringUtils.hasText(toolName) ? toolMap.get(toolName) : null;
+        if (tool == null) {
+            result = "工具调用失败：工具未绑定或不存在: " + toolName;
+        } else {
+            try {
+                result = mcpClientService.callTool(tool.getMcpServerId(), toolName, parseArguments(argumentsJson));
+            } catch (RuntimeException e) {
+                result = "工具调用失败：" + e.getMessage();
+            }
+        }
+
+        saveMessage(sessionId, "tool", result, null, null, toolMetadata(toolCallId, toolName));
+        ChatRequest.Message message = toProviderMessage("tool", result);
+        message.setToolCallId(toolCallId);
+        message.setName(toolName);
+        return message;
+    }
+
+    private Map<String, Object> parseArguments(String argumentsJson) {
+        if (!StringUtils.hasText(argumentsJson)) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(argumentsJson, new TypeReference<Map<String, Object>>() {
+            });
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "工具参数不是合法 JSON: " + e.getMessage());
+        }
+    }
+
+    private void streamFinalResponse(ResolvedChat resolved,
+                                     ChatMessagePo userMessage,
+                                     ChatRequest request,
+                                     ChatStreamCallback callback,
+                                     long start) {
+        StreamingState state = new StreamingState();
+        providerService.streamChat(resolved.agent().getModelConfigId(), request, chunk -> {
+            state.apply(chunk);
+            if (StringUtils.hasText(chunk.getContent())) {
+                ChatStreamChunk event = new ChatStreamChunk();
+                event.setSessionId(resolved.session().getId());
+                event.setContent(chunk.getContent());
+                event.setFinishReason(chunk.getFinishReason());
+                event.setDone(false);
+                callback.onDelta(event);
+            }
+        });
+
+        long latencyMs = System.currentTimeMillis() - start;
+        ChatMessagePo assistantMessage = saveMessage(
+                resolved.session().getId(),
+                "assistant",
+                state.content(),
+                state.tokenCount(),
+                state.toolCalls(),
+                state.metadata(latencyMs));
+        ChatStreamChunk done = new ChatStreamChunk();
+        done.setSessionId(resolved.session().getId());
+        done.setFinishReason(state.finishReason());
+        done.setDone(true);
+        callback.onDelta(done);
+        callback.onComplete(toCompletionResponse(resolved.session(), userMessage, assistantMessage));
+    }
+
+    private ChatRequest copyRequest(ChatRequest source) {
+        ChatRequest request = new ChatRequest();
+        request.setModel(source.getModel());
+        request.setTemperature(source.getTemperature());
+        request.setTopP(source.getTopP());
+        request.setMaxTokens(source.getMaxTokens());
+        request.setStop(source.getStop());
+        request.setExtraParams(source.getExtraParams());
+        request.setTools(source.getTools());
+        request.setMessages(source.getMessages());
+        return request;
+    }
+
+    private ChatRequest withoutTools(ChatRequest source) {
+        ChatRequest request = copyRequest(source);
+        request.setTools(null);
+        return request;
     }
 
     private String buildKnowledgeContext(Long agentId, String currentUserContent) {
@@ -526,6 +743,28 @@ public class ChatServiceImpl implements ChatService {
         message.setRole(role);
         message.setContent(content);
         return message;
+    }
+
+    private ChatRequest.Message toProviderMessage(ChatMessagePo po) {
+        ChatRequest.Message message = toProviderMessage(po.getRole(), po.getContent());
+        if ("assistant".equals(po.getRole()) && po.getToolCalls() != null) {
+            message.setToolCalls(toRequestToolCalls(po.getToolCalls()));
+        }
+        if ("tool".equals(po.getRole()) && po.getMetadata() != null) {
+            Object toolCallId = po.getMetadata().get("toolCallId");
+            Object toolName = po.getMetadata().get("toolName");
+            message.setToolCallId(toolCallId != null ? toolCallId.toString() : null);
+            message.setName(toolName != null ? toolName.toString() : null);
+        }
+        return message;
+    }
+
+    private List<ChatRequest.ToolCall> toRequestToolCalls(Object toolCalls) {
+        if (toolCalls == null) {
+            return null;
+        }
+        return objectMapper.convertValue(toolCalls, new TypeReference<List<ChatRequest.ToolCall>>() {
+        });
     }
 
     private ChatMessagePo saveUserMessage(Long sessionId, String content) {
@@ -604,6 +843,13 @@ public class ChatServiceImpl implements ChatService {
         if (StringUtils.hasText(errorMessage)) {
             metadata.put("errorMessage", errorMessage);
         }
+        return metadata;
+    }
+
+    private Map<String, Object> toolMetadata(String toolCallId, String toolName) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("toolCallId", toolCallId);
+        metadata.put("toolName", toolName);
         return metadata;
     }
 

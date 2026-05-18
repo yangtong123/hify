@@ -15,6 +15,9 @@ import com.hify.modules.chat.infra.mapper.ChatSessionMapper;
 import com.hify.modules.chat.infra.po.ChatMessagePo;
 import com.hify.modules.chat.infra.po.ChatSessionPo;
 import com.hify.modules.knowledge.api.KnowledgeService;
+import com.hify.modules.mcp.api.McpClientService;
+import com.hify.modules.mcp.api.McpService;
+import com.hify.modules.mcp.api.dto.McpToolDto;
 import com.hify.modules.provider.api.ProviderService;
 import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ChatResponse;
@@ -31,6 +34,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -65,6 +69,12 @@ class ChatServiceImplTest {
     @Mock
     private WorkflowRunService workflowRunService;
 
+    @Mock
+    private McpService mcpService;
+
+    @Mock
+    private McpClientService mcpClientService;
+
     private final List<ChatSessionPo> sessions = new ArrayList<>();
     private final List<ChatMessagePo> messages = new ArrayList<>();
     private ChatServiceImpl chatService;
@@ -73,11 +83,12 @@ class ChatServiceImplTest {
     void setUp() {
         Executor directExecutor = Runnable::run;
         chatService = new ChatServiceImpl(sessionMapper, messageMapper, agentService, providerService,
-                knowledgeService, workflowRunService, directExecutor, null);
+                knowledgeService, workflowRunService, mcpService, mcpClientService, directExecutor, null);
         stubPersistence();
         lenient().when(agentService.getById(1L)).thenReturn(agent());
         lenient().when(providerService.getModelConfig(10L)).thenReturn(model());
         lenient().when(knowledgeService.retrieveForAgent(eq(1L), any())).thenReturn(List.of());
+        lenient().when(mcpService.listAgentTools(1L)).thenReturn(List.of());
     }
 
     @Test
@@ -163,6 +174,71 @@ class ChatServiceImplTest {
         assertThat(completions.get(0).getAssistantMessage().getContent()).isEqualTo("Hello");
         assertThat(completions.get(0).getAssistantMessage().getTokenCount()).isEqualTo(9);
         assertThat(messages).extracting(ChatMessagePo::getRole).containsExactly("user", "assistant");
+    }
+
+    @Test
+    void streamMessageShouldCallMcpToolThenStreamFinalAnswer() {
+        AgentDetailResponse agent = agent();
+        AgentDetailResponse.McpServerInfo serverInfo = new AgentDetailResponse.McpServerInfo();
+        serverInfo.setId(30L);
+        serverInfo.setName("CRM MCP");
+        serverInfo.setServerType("streamable_http");
+        serverInfo.setIsEnabled(true);
+        agent.setMcpServers(List.of(serverInfo));
+        when(agentService.getById(1L)).thenReturn(agent);
+
+        McpToolDto tool = new McpToolDto();
+        tool.setId(40L);
+        tool.setMcpServerId(30L);
+        tool.setName("get_customer_profile");
+        tool.setDescription("查询客户画像");
+        tool.setInputSchema(Map.of("type", "object"));
+        when(mcpService.listAgentTools(1L)).thenReturn(List.of(tool));
+        when(mcpClientService.callTool(eq(30L), eq("get_customer_profile"), any()))
+                .thenReturn("客户等级：VIP");
+
+        ChatResponse first = new ChatResponse();
+        first.setId("tool-first");
+        first.setModel("gpt-mock");
+        first.setRole("assistant");
+        first.setFinishReason("tool_calls");
+        ChatResponse.ToolCall toolCall = new ChatResponse.ToolCall();
+        toolCall.setId("call-1");
+        toolCall.setType("function");
+        ChatResponse.FunctionCall functionCall = new ChatResponse.FunctionCall();
+        functionCall.setName("get_customer_profile");
+        functionCall.setArguments("{\"customerId\":\"c-1\"}");
+        toolCall.setFunction(functionCall);
+        first.setToolCalls(List.of(toolCall));
+        when(providerService.chat(eq(10L), any(ChatRequest.class))).thenReturn(first);
+
+        doAnswer(invocation -> {
+            Consumer<ChatResponse> consumer = invocation.getArgument(2);
+            consumer.accept(ChatResponse.delta("已查询，"));
+            consumer.accept(ChatResponse.delta("该客户是 VIP。"));
+            ChatResponse done = new ChatResponse();
+            done.setId("stream-2");
+            done.setModel("gpt-mock");
+            done.setFinishReason("stop");
+            ChatResponse.Usage usage = new ChatResponse.Usage();
+            usage.setTotalTokens(18);
+            done.setUsage(usage);
+            consumer.accept(done);
+            return null;
+        }).when(providerService).streamChat(eq(10L), any(ChatRequest.class), any());
+
+        List<ChatStreamChunk> chunks = new ArrayList<>();
+        List<ChatCompletionResponse> completions = new ArrayList<>();
+
+        chatService.streamMessage(request(null, "查一下客户 c-1"), callback(chunks, completions));
+
+        verify(mcpClientService).callTool(eq(30L), eq("get_customer_profile"), any());
+        assertThat(chunks).extracting(ChatStreamChunk::getContent)
+                .containsExactly("已查询，", "该客户是 VIP。", null);
+        assertThat(completions.get(0).getAssistantMessage().getContent()).isEqualTo("已查询，该客户是 VIP。");
+        assertThat(messages).extracting(ChatMessagePo::getRole)
+                .containsExactly("user", "assistant", "tool", "assistant");
+        assertThat(messages.get(2).getContent()).isEqualTo("客户等级：VIP");
     }
 
     @Test

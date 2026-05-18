@@ -7,6 +7,7 @@ import {
   Connection,
   Expand,
   Fold,
+  Link,
   Setting,
   User,
 } from '@element-plus/icons-vue'
@@ -18,6 +19,7 @@ const isCollapsed = ref(false)
 const menuItems = [
   { path: '/providers', icon: Setting, label: '提供商管理' },
   { path: '/agents', icon: User, label: 'Agent 管理' },
+  { path: '/mcp-servers', icon: Link, label: 'MCP 管理' },
   { path: '/knowledge', icon: Collection, label: '知识库管理' },
   { path: '/workflows', icon: Connection, label: '工作流管理' },
   { path: '/chat', icon: ChatDotRound, label: '对话' },
