@@ -2,6 +2,7 @@ package com.hify.modules.mcp.domain;
 
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
+import com.hify.common.metrics.HifyMetrics;
 import com.hify.modules.mcp.api.McpClientService;
 import com.hify.modules.mcp.infra.client.McpClientFactory;
 import com.hify.modules.mcp.infra.mapper.McpServerMapper;
@@ -22,11 +23,13 @@ public class McpClientServiceImpl implements McpClientService {
 
     private final McpServerMapper mcpServerMapper;
     private final McpClientFactory mcpClientFactory;
+    private final HifyMetrics hifyMetrics;
 
     @Override
     public String callTool(Long mcpServerId, String toolName, Map<String, Object> arguments) {
         McpServerPo server = getEnabledServer(mcpServerId);
         long start = System.currentTimeMillis();
+        boolean success = false;
         log.info("MCP tool call started: serverId={}, serverName={}, toolName={}, arguments={}",
                 mcpServerId, server.getName(), toolName, arguments != null ? arguments.size() : 0);
         try (var client = mcpClientFactory.create(server)) {
@@ -42,11 +45,14 @@ public class McpClientServiceImpl implements McpClientService {
                     .collect(Collectors.joining("\n"));
             log.info("MCP tool call completed: serverId={}, toolName={}, latency={}ms, resultLength={}",
                     mcpServerId, toolName, System.currentTimeMillis() - start, text.length());
+            success = true;
             return text;
         } catch (RuntimeException e) {
             log.warn("MCP tool call failed: serverId={}, toolName={}, latency={}ms, error={}",
                     mcpServerId, toolName, System.currentTimeMillis() - start, e.getMessage());
             throw new BizException(ErrorCode.MCP_TOOL_CALL_FAILED, "MCP 工具调用失败: " + e.getMessage());
+        } finally {
+            hifyMetrics.recordMcpToolCall(mcpServerId, toolName, success);
         }
     }
 

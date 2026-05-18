@@ -9,6 +9,7 @@ import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
 import com.hify.common.exception.LlmApiException;
 import com.hify.common.log.TraceContext;
+import com.hify.common.metrics.HifyMetrics;
 import com.hify.common.util.PageHelper;
 import com.hify.common.web.PageResult;
 import com.hify.modules.agent.api.AgentService;
@@ -74,6 +75,7 @@ public class ChatServiceImpl implements ChatService {
     private final McpClientService mcpClientService;
     private final Executor llmExecutor;
     private final TransactionTemplate transactionTemplate;
+    private final HifyMetrics hifyMetrics;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ChatServiceImpl(ChatSessionMapper sessionMapper,
@@ -85,7 +87,8 @@ public class ChatServiceImpl implements ChatService {
                            McpService mcpService,
                            McpClientService mcpClientService,
                            @Qualifier("llmExecutor") Executor llmExecutor,
-                           TransactionTemplate transactionTemplate) {
+                           TransactionTemplate transactionTemplate,
+                           HifyMetrics hifyMetrics) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
         this.agentService = agentService;
@@ -96,69 +99,77 @@ public class ChatServiceImpl implements ChatService {
         this.mcpClientService = mcpClientService;
         this.llmExecutor = llmExecutor;
         this.transactionTemplate = transactionTemplate;
+        this.hifyMetrics = hifyMetrics;
     }
 
     @Override
     public ChatCompletionResponse completeMessage(ChatSendRequest request) {
+        long metricsStart = System.nanoTime();
+        Long metricsAgentId = request != null ? request.getAgentId() : null;
         log.info("Chat completion started: userId={}, agentId={}, workflowId={}, sessionId={}, contentLength={}",
                 request != null ? request.getUserId() : null,
                 request != null ? request.getAgentId() : null,
                 request != null ? request.getWorkflowId() : null,
                 request != null ? request.getSessionId() : null,
                 request != null ? lengthOf(request.getContent()) : 0);
-        ResolvedChat resolved = resolveChat(request);
-        ChatMessagePo userMessage = saveUserMessage(resolved.session().getId(), request.getContent());
-        log.info("Chat user message saved: sessionId={}, messageId={}, agentId={}, workflowId={}",
-                resolved.session().getId(), userMessage.getId(), agentIdOf(resolved), resolved.workflowId());
+        try {
+            ResolvedChat resolved = resolveChat(request);
+            metricsAgentId = agentIdOf(resolved);
+            ChatMessagePo userMessage = saveUserMessage(resolved.session().getId(), request.getContent());
+            log.info("Chat user message saved: sessionId={}, messageId={}, agentId={}, workflowId={}",
+                    resolved.session().getId(), userMessage.getId(), agentIdOf(resolved), resolved.workflowId());
 
-        if (resolved.workflowId() != null) {
-            ChatMessagePo assistantMessage = executeWorkflowMessage(resolved, request.getContent(), null);
-            return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
-        }
-
-        ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
-        if (hasTools(providerRequest)) {
-            long toolStart = System.currentTimeMillis();
-            log.info("Chat tool flow started: sessionId={}, agentId={}, tools={}",
-                    resolved.session().getId(), resolved.agent().getId(), providerRequest.getTools().size());
-            com.hify.modules.provider.api.dto.ChatResponse firstResponse = providerService.chat(
-                    resolved.agent().getModelConfigId(), providerRequest);
-            if ("tool_calls".equals(firstResponse.getFinishReason())) {
-                ChatRequest secondRequest = buildToolFollowUpRequest(resolved, providerRequest, firstResponse);
-                com.hify.modules.provider.api.dto.ChatResponse secondResponse = providerService.chat(
-                        resolved.agent().getModelConfigId(), secondRequest);
-                long latencyMs = System.currentTimeMillis() - toolStart;
-                ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), secondResponse, latencyMs);
-                log.info("Chat tool flow completed: sessionId={}, agentId={}, latency={}ms, finishReason={}",
-                        resolved.session().getId(), resolved.agent().getId(), latencyMs, secondResponse.getFinishReason());
+            if (resolved.workflowId() != null) {
+                ChatMessagePo assistantMessage = executeWorkflowMessage(resolved, request.getContent(), null);
                 return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
             }
-            long latencyMs = System.currentTimeMillis() - toolStart;
-            ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), firstResponse, latencyMs);
-            log.info("Chat tool flow completed: sessionId={}, agentId={}, latency={}ms, finishReason={}",
-                    resolved.session().getId(), resolved.agent().getId(), latencyMs, firstResponse.getFinishReason());
+
+            ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
+            if (hasTools(providerRequest)) {
+                long toolStart = System.currentTimeMillis();
+                log.info("Chat tool flow started: sessionId={}, agentId={}, tools={}",
+                        resolved.session().getId(), resolved.agent().getId(), providerRequest.getTools().size());
+                com.hify.modules.provider.api.dto.ChatResponse firstResponse = providerService.chat(
+                        resolved.agent().getModelConfigId(), providerRequest);
+                if ("tool_calls".equals(firstResponse.getFinishReason())) {
+                    ChatRequest secondRequest = buildToolFollowUpRequest(resolved, providerRequest, firstResponse);
+                    com.hify.modules.provider.api.dto.ChatResponse secondResponse = providerService.chat(
+                            resolved.agent().getModelConfigId(), secondRequest);
+                    long latencyMs = System.currentTimeMillis() - toolStart;
+                    ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), secondResponse, latencyMs);
+                    log.info("Chat tool flow completed: sessionId={}, agentId={}, latency={}ms, finishReason={}",
+                            resolved.session().getId(), resolved.agent().getId(), latencyMs, secondResponse.getFinishReason());
+                    return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
+                }
+                long latencyMs = System.currentTimeMillis() - toolStart;
+                ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), firstResponse, latencyMs);
+                log.info("Chat tool flow completed: sessionId={}, agentId={}, latency={}ms, finishReason={}",
+                        resolved.session().getId(), resolved.agent().getId(), latencyMs, firstResponse.getFinishReason());
+                return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
+            }
+
+            long start = System.currentTimeMillis();
+            com.hify.modules.provider.api.dto.ChatResponse providerResponse;
+            try {
+                providerResponse = providerService.chat(resolved.agent().getModelConfigId(), providerRequest);
+            } catch (RuntimeException e) {
+                log.warn("Chat completion failed: sessionId={}, agentId={}, modelConfigId={}, latency={}ms, error={}",
+                        resolved.session().getId(), resolved.agent().getId(), resolved.agent().getModelConfigId(),
+                        System.currentTimeMillis() - start, e.getMessage());
+                throw e;
+            }
+            long latencyMs = System.currentTimeMillis() - start;
+
+            ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), providerResponse, latencyMs);
+            log.info("Chat assistant message saved: sessionId={}, messageId={}, agentId={}",
+                    resolved.session().getId(), assistantMessage.getId(), resolved.agent().getId());
+            log.info("Chat completed: sessionId={}, agentId={}, model={}, latency={}ms, tokens={}",
+                    resolved.session().getId(), resolved.agent().getId(), providerResponse.getModel(),
+                    latencyMs, totalTokens(providerResponse));
             return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
+        } finally {
+            hifyMetrics.recordChatRequest(metricsAgentId, metricsStart);
         }
-
-        long start = System.currentTimeMillis();
-        com.hify.modules.provider.api.dto.ChatResponse providerResponse;
-        try {
-            providerResponse = providerService.chat(resolved.agent().getModelConfigId(), providerRequest);
-        } catch (RuntimeException e) {
-            log.warn("Chat completion failed: sessionId={}, agentId={}, modelConfigId={}, latency={}ms, error={}",
-                    resolved.session().getId(), resolved.agent().getId(), resolved.agent().getModelConfigId(),
-                    System.currentTimeMillis() - start, e.getMessage());
-            throw e;
-        }
-        long latencyMs = System.currentTimeMillis() - start;
-
-        ChatMessagePo assistantMessage = saveAssistantMessage(resolved.session().getId(), providerResponse, latencyMs);
-        log.info("Chat assistant message saved: sessionId={}, messageId={}, agentId={}",
-                resolved.session().getId(), assistantMessage.getId(), resolved.agent().getId());
-        log.info("Chat completed: sessionId={}, agentId={}, model={}, latency={}ms, tokens={}",
-                resolved.session().getId(), resolved.agent().getId(), providerResponse.getModel(),
-                latencyMs, totalTokens(providerResponse));
-        return toCompletionResponse(resolved.session(), userMessage, assistantMessage);
     }
 
     @Override
@@ -204,75 +215,82 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public void streamMessage(ChatSendRequest request, ChatStreamCallback callback) {
+        long metricsStart = System.nanoTime();
+        Long metricsAgentId = request != null ? request.getAgentId() : null;
         log.info("Chat stream started: userId={}, agentId={}, workflowId={}, sessionId={}, contentLength={}",
                 request != null ? request.getUserId() : null,
                 request != null ? request.getAgentId() : null,
                 request != null ? request.getWorkflowId() : null,
                 request != null ? request.getSessionId() : null,
                 request != null ? lengthOf(request.getContent()) : 0);
-        ResolvedChat resolved = resolveChat(request);
-        ChatMessagePo userMessage = saveUserMessage(resolved.session().getId(), request.getContent());
-        log.info("Chat stream user message saved: sessionId={}, messageId={}, agentId={}, workflowId={}",
-                resolved.session().getId(), userMessage.getId(), agentIdOf(resolved), resolved.workflowId());
-        callback.onSession(toSessionResponse(resolved.session()));
-
-        if (resolved.workflowId() != null) {
-            streamWorkflowMessage(resolved, userMessage, request.getContent(), callback);
-            return;
-        }
-
-        ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
-        if (hasTools(providerRequest)) {
-            log.info("Chat tool flow started: sessionId={}, agentId={}, tools={}",
-                    resolved.session().getId(), resolved.agent().getId(), providerRequest.getTools().size());
-            streamMessageWithTools(resolved, userMessage, providerRequest, callback);
-            return;
-        }
-        StreamingState state = new StreamingState();
-        long start = System.currentTimeMillis();
         try {
-            providerService.streamChat(resolved.agent().getModelConfigId(), providerRequest, chunk -> {
-                state.apply(chunk);
-                if (StringUtils.hasText(chunk.getContent())) {
-                    ChatStreamChunk event = new ChatStreamChunk();
-                    event.setSessionId(resolved.session().getId());
-                    event.setContent(chunk.getContent());
-                    event.setFinishReason(chunk.getFinishReason());
-                    event.setDone(false);
-                    callback.onDelta(event);
+            ResolvedChat resolved = resolveChat(request);
+            metricsAgentId = agentIdOf(resolved);
+            ChatMessagePo userMessage = saveUserMessage(resolved.session().getId(), request.getContent());
+            log.info("Chat stream user message saved: sessionId={}, messageId={}, agentId={}, workflowId={}",
+                    resolved.session().getId(), userMessage.getId(), agentIdOf(resolved), resolved.workflowId());
+            callback.onSession(toSessionResponse(resolved.session()));
+
+            if (resolved.workflowId() != null) {
+                streamWorkflowMessage(resolved, userMessage, request.getContent(), callback);
+                return;
+            }
+
+            ChatRequest providerRequest = buildProviderRequest(resolved, request.getContent());
+            if (hasTools(providerRequest)) {
+                log.info("Chat tool flow started: sessionId={}, agentId={}, tools={}",
+                        resolved.session().getId(), resolved.agent().getId(), providerRequest.getTools().size());
+                streamMessageWithTools(resolved, userMessage, providerRequest, callback);
+                return;
+            }
+            StreamingState state = new StreamingState();
+            long start = System.currentTimeMillis();
+            try {
+                providerService.streamChat(resolved.agent().getModelConfigId(), providerRequest, chunk -> {
+                    state.apply(chunk);
+                    if (StringUtils.hasText(chunk.getContent())) {
+                        ChatStreamChunk event = new ChatStreamChunk();
+                        event.setSessionId(resolved.session().getId());
+                        event.setContent(chunk.getContent());
+                        event.setFinishReason(chunk.getFinishReason());
+                        event.setDone(false);
+                        callback.onDelta(event);
+                    }
+                });
+
+                long latencyMs = System.currentTimeMillis() - start;
+                ChatMessagePo assistantMessage = saveMessage(
+                        resolved.session().getId(),
+                        "assistant",
+                        state.content(),
+                        state.tokenCount(),
+                        state.toolCalls(),
+                        state.metadata(latencyMs));
+                log.info("Chat stream assistant message saved: sessionId={}, messageId={}, agentId={}",
+                        resolved.session().getId(), assistantMessage.getId(), resolved.agent().getId());
+
+                ChatStreamChunk done = new ChatStreamChunk();
+                done.setSessionId(resolved.session().getId());
+                done.setFinishReason(state.finishReason());
+                done.setDone(true);
+                callback.onDelta(done);
+                callback.onComplete(toCompletionResponse(resolved.session(), userMessage, assistantMessage));
+                log.info("Chat stream completed: sessionId={}, agentId={}, model={}, latency={}ms, tokens={}",
+                        resolved.session().getId(), resolved.agent().getId(), state.model(), latencyMs, state.tokenCount());
+            } catch (RuntimeException e) {
+                if (e instanceof ClientDisconnectedException
+                        || e instanceof SseSendException
+                        || e instanceof LlmApiException) {
+                    throw e;
                 }
-            });
-
-            long latencyMs = System.currentTimeMillis() - start;
-            ChatMessagePo assistantMessage = saveMessage(
-                    resolved.session().getId(),
-                    "assistant",
-                    state.content(),
-                    state.tokenCount(),
-                    state.toolCalls(),
-                    state.metadata(latencyMs));
-            log.info("Chat stream assistant message saved: sessionId={}, messageId={}, agentId={}",
-                    resolved.session().getId(), assistantMessage.getId(), resolved.agent().getId());
-
-            ChatStreamChunk done = new ChatStreamChunk();
-            done.setSessionId(resolved.session().getId());
-            done.setFinishReason(state.finishReason());
-            done.setDone(true);
-            callback.onDelta(done);
-            callback.onComplete(toCompletionResponse(resolved.session(), userMessage, assistantMessage));
-            log.info("Chat stream completed: sessionId={}, agentId={}, model={}, latency={}ms, tokens={}",
-                    resolved.session().getId(), resolved.agent().getId(), state.model(), latencyMs, state.tokenCount());
-        } catch (RuntimeException e) {
-            if (e instanceof ClientDisconnectedException
-                    || e instanceof SseSendException
-                    || e instanceof LlmApiException) {
+                log.warn("Chat stream failed: sessionId={}, agentId={}, modelConfigId={}, error={}",
+                        resolved.session().getId(), resolved.agent().getId(), resolved.agent().getModelConfigId(),
+                        e.getMessage());
+                callback.onError(e);
                 throw e;
             }
-            log.warn("Chat stream failed: sessionId={}, agentId={}, modelConfigId={}, error={}",
-                    resolved.session().getId(), resolved.agent().getId(), resolved.agent().getModelConfigId(),
-                    e.getMessage());
-            callback.onError(e);
-            throw e;
+        } finally {
+            hifyMetrics.recordChatRequest(metricsAgentId, metricsStart);
         }
     }
 

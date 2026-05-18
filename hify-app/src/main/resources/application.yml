@@ -65,6 +65,24 @@ resilience4j:
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 3
 
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+      base-path: /actuator
+  endpoint:
+    prometheus:
+      access: unrestricted
+    health:
+      show-details: when_authorized
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
 logging:
   level:
     root: INFO

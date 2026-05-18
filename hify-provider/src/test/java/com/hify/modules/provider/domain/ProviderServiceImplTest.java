@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
+import com.hify.common.metrics.HifyMetrics;
+import com.hify.common.resilience.CircuitBreakerService;
 import com.hify.common.web.PageResult;
 import com.hify.modules.provider.api.dto.ConnectionTestResult;
 import com.hify.modules.provider.api.dto.ProviderDetailResponse;
@@ -22,6 +24,8 @@ import com.hify.modules.provider.infra.po.ProviderPo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -63,7 +67,9 @@ class ProviderServiceImplTest {
                 providerMapper,
                 modelConfigMapper,
                 healthCheckMapper,
-                adapterFactory);
+                adapterFactory,
+                new CircuitBreakerService(CircuitBreakerRegistry.ofDefaults(), new HifyMetrics(new SimpleMeterRegistry())),
+                new HifyMetrics(new SimpleMeterRegistry()));
     }
 
     @Test

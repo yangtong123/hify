@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
+import com.hify.common.metrics.HifyMetrics;
+import com.hify.common.resilience.CircuitBreakerService;
 import com.hify.common.web.PageResult;
 import com.hify.modules.provider.api.dto.ChatRequest;
 import com.hify.modules.provider.api.dto.ChatResponse;
@@ -48,6 +50,8 @@ public class ProviderServiceImpl implements ProviderService {
     private final ModelConfigMapper modelConfigMapper;
     private final ProviderHealthCheckMapper healthCheckMapper;
     private final ProviderAdapterFactory adapterFactory;
+    private final CircuitBreakerService circuitBreakerService;
+    private final HifyMetrics hifyMetrics;
 
     @Override
     @Transactional
@@ -274,12 +278,16 @@ public class ProviderServiceImpl implements ProviderService {
     public ChatResponse chat(Long modelConfigId, ChatRequest request) {
         ChatInvocation invocation = buildChatInvocation(modelConfigId, request);
         long start = System.currentTimeMillis();
+        long metricsStart = System.nanoTime();
+        boolean success = false;
         log.info("Provider chat started: providerId={}, providerName={}, type={}, modelConfigId={}, model={}, messages={}",
                 invocation.provider().getId(), invocation.provider().getName(), invocation.provider().getType(),
                 modelConfigId, invocation.request().getModel(), countList(invocation.request().getMessages()));
         try {
-            ChatResponse response = adapterFactory.getAdapter(invocation.provider().getType())
-                    .chat(invocation.provider(), invocation.request());
+            ChatResponse response = circuitBreakerService.execute(invocation.provider().getName(),
+                    () -> adapterFactory.getAdapter(invocation.provider().getType())
+                            .chat(invocation.provider(), invocation.request()));
+            success = true;
             log.info("Provider chat completed: providerId={}, model={}, latency={}ms, finishReason={}, tokens={}",
                     invocation.provider().getId(), response.getModel(), System.currentTimeMillis() - start,
                     response.getFinishReason(), totalTokens(response));
@@ -289,6 +297,8 @@ public class ProviderServiceImpl implements ProviderService {
                     invocation.provider().getId(), invocation.request().getModel(),
                     System.currentTimeMillis() - start, e.getMessage());
             throw e;
+        } finally {
+            hifyMetrics.recordLlmCall(invocation.provider().getName(), invocation.request().getModel(), success, metricsStart);
         }
     }
 
@@ -296,12 +306,18 @@ public class ProviderServiceImpl implements ProviderService {
     public void streamChat(Long modelConfigId, ChatRequest request, Consumer<ChatResponse> chunkConsumer) {
         ChatInvocation invocation = buildChatInvocation(modelConfigId, request);
         long start = System.currentTimeMillis();
+        long metricsStart = System.nanoTime();
+        boolean success = false;
         log.info("Provider stream chat started: providerId={}, providerName={}, type={}, modelConfigId={}, model={}, messages={}",
                 invocation.provider().getId(), invocation.provider().getName(), invocation.provider().getType(),
                 modelConfigId, invocation.request().getModel(), countList(invocation.request().getMessages()));
         try {
-            adapterFactory.getAdapter(invocation.provider().getType())
-                    .streamChat(invocation.provider(), invocation.request(), chunkConsumer);
+            circuitBreakerService.execute(invocation.provider().getName(), () -> {
+                adapterFactory.getAdapter(invocation.provider().getType())
+                        .streamChat(invocation.provider(), invocation.request(), chunkConsumer);
+                return null;
+            });
+            success = true;
             log.info("Provider stream chat completed: providerId={}, model={}, latency={}ms",
                     invocation.provider().getId(), invocation.request().getModel(), System.currentTimeMillis() - start);
         } catch (RuntimeException e) {
@@ -309,6 +325,8 @@ public class ProviderServiceImpl implements ProviderService {
                     invocation.provider().getId(), invocation.request().getModel(),
                     System.currentTimeMillis() - start, e.getMessage());
             throw e;
+        } finally {
+            hifyMetrics.recordLlmCall(invocation.provider().getName(), invocation.request().getModel(), success, metricsStart);
         }
     }
 
@@ -317,12 +335,16 @@ public class ProviderServiceImpl implements ProviderService {
         ChatInvocation invocation = buildChatInvocation(modelConfigId, toChatCompatibleRequest(request));
         request.setModel(invocation.request().getModel());
         long start = System.currentTimeMillis();
+        long metricsStart = System.nanoTime();
+        boolean success = false;
         log.info("Provider embedding started: providerId={}, providerName={}, type={}, modelConfigId={}, model={}, inputs={}",
                 invocation.provider().getId(), invocation.provider().getName(), invocation.provider().getType(),
                 modelConfigId, request.getModel(), countList(request.getInputs()));
         try {
-            EmbeddingResponse response = adapterFactory.getAdapter(invocation.provider().getType())
-                    .embed(invocation.provider(), request);
+            EmbeddingResponse response = circuitBreakerService.execute(invocation.provider().getName(),
+                    () -> adapterFactory.getAdapter(invocation.provider().getType())
+                            .embed(invocation.provider(), request));
+            success = true;
             log.info("Provider embedding completed: providerId={}, model={}, latency={}ms, embeddings={}",
                     invocation.provider().getId(), request.getModel(), System.currentTimeMillis() - start,
                     countList(response.getEmbeddings()));
@@ -331,6 +353,8 @@ public class ProviderServiceImpl implements ProviderService {
             log.warn("Provider embedding failed: providerId={}, model={}, latency={}ms, error={}",
                     invocation.provider().getId(), request.getModel(), System.currentTimeMillis() - start, e.getMessage());
             throw e;
+        } finally {
+            hifyMetrics.recordLlmCall(invocation.provider().getName(), request.getModel(), success, metricsStart);
         }
     }
 

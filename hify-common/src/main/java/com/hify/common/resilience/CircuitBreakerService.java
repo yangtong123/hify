@@ -4,6 +4,7 @@ import com.hify.common.exception.ErrorCode;
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.LlmApiException;
 import com.hify.common.exception.LlmApiException.ErrorType;
+import com.hify.common.metrics.HifyMetrics;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
@@ -19,9 +20,12 @@ import java.util.function.Supplier;
 public class CircuitBreakerService {
 
     private final CircuitBreakerRegistry circuitBreakerRegistry;
+    private final HifyMetrics hifyMetrics;
 
     public CircuitBreaker getOrCreate(String providerName) {
-        return circuitBreakerRegistry.circuitBreaker(providerName);
+        CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker(providerName);
+        hifyMetrics.registerProviderCircuitBreaker(providerName, circuitBreaker);
+        return circuitBreaker;
     }
 
     public <T> T execute(String providerName, Supplier<T> call) {

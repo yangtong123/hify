@@ -3,6 +3,7 @@ package com.hify.modules.chat.domain;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hify.common.exception.BizException;
 import com.hify.common.exception.ErrorCode;
+import com.hify.common.metrics.HifyMetrics;
 import com.hify.modules.agent.api.AgentService;
 import com.hify.modules.agent.api.dto.AgentDetailResponse;
 import com.hify.modules.chat.api.ChatStreamCallback;
@@ -26,6 +27,7 @@ import com.hify.modules.workflow.api.WorkflowRunService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -83,7 +85,8 @@ class ChatServiceImplTest {
     void setUp() {
         Executor directExecutor = Runnable::run;
         chatService = new ChatServiceImpl(sessionMapper, messageMapper, agentService, providerService,
-                knowledgeService, workflowRunService, mcpService, mcpClientService, directExecutor, null);
+                knowledgeService, workflowRunService, mcpService, mcpClientService, directExecutor, null,
+                new HifyMetrics(new SimpleMeterRegistry()));
         stubPersistence();
         lenient().when(agentService.getById(1L)).thenReturn(agent());
         lenient().when(providerService.getModelConfig(10L)).thenReturn(model());
