@@ -312,7 +312,7 @@ public class ProviderServiceImpl implements ProviderService {
                 invocation.provider().getId(), invocation.provider().getName(), invocation.provider().getType(),
                 modelConfigId, invocation.request().getModel(), countList(invocation.request().getMessages()));
         try {
-            circuitBreakerService.execute(invocation.provider().getName(), () -> {
+            circuitBreakerService.executeWithoutRetry(invocation.provider().getName(), () -> {
                 adapterFactory.getAdapter(invocation.provider().getType())
                         .streamChat(invocation.provider(), invocation.request(), chunkConsumer);
                 return null;

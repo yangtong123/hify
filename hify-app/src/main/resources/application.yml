@@ -89,6 +89,8 @@ logging:
     com.hify: DEBUG
 
 hify:
+  metrics:
+    max-agent-tags: 500
   knowledge:
     storage-path: ${HIFY_KNOWLEDGE_STORAGE_PATH:data/knowledge}
     vector:
